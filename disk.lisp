@@ -539,7 +539,7 @@
 ;;; storable-class
 
 (defun cache-class (class id)
-  (when (< (length *classes*) id)
+  (when (<= (length *classes*) id)
     (adjust-array *classes* (1+ id)))
   (when (> (1+ id) (fill-pointer *classes*))
     (setf (fill-pointer *classes*) (1+ id)))
