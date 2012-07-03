@@ -30,7 +30,7 @@
   (apply next-method class
          (if direct-superclasses
              args
-             (list* :direct-superclasses (list (find-class 'identifiable))
+             (list* :direct-superclasses (list (find-class 'storable-object))
                     args))))
 
 (defmethod initialize-instance :around ((class storable-class)
@@ -110,8 +110,15 @@
 
 ;;;
 
-(defclass identifiable (standard-object)
-  ((id :initform nil
+(defclass storable-object (standard-object)
+  ((collection :initarg :collection
+               :initform nil
+               :accessor collection
+               :storep nil)
+   (top-level :initarg :top-level
+              :initform nil
+              :accessor top-level)
+   (id :initform nil
        :accessor id
        :storep nil)
    (written :initform nil

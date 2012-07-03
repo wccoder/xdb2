@@ -62,3 +62,12 @@
           do (setf (row-major-aref new-array i)
                    (row-major-aref array i)))
     new-array))
+
+(defun copy-object (object &rest initargs)
+  (let* ((class (class-of object))
+         (new (allocate-instance class)))
+    (loop for slotd in (class-slots class)
+          when (slot-boundp-using-class class object slotd)
+          do (setf (slot-value-using-class class new slotd)
+                   (slot-value-using-class class object slotd)))
+    (apply #'reinitialize-instance new initargs)))

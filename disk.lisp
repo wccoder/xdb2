@@ -26,7 +26,7 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *codes*
     #(ascii-string
-      identifiable
+      storable-link
       cons
       string
       null
@@ -61,6 +61,7 @@
     type))
 
 (defvar *collection* nil)
+(defvar *storable-object-hook* nil)
 
 (defvar *classes*)
 (defvar *packages*)
@@ -79,10 +80,10 @@
 (defparameter *readers* (make-array (length *codes*)))
 (declaim (type (simple-array function (*)) *readers*))
 
-(defmacro defreader (type (stream) &body body)
+(defmacro defreader (type args &body body)
   (let ((name (intern (format nil "~a-~a" type '#:reader))))
     `(progn
-       (defun ,name (,stream)
+       (defun ,name ,args
          ,@body)
        (setf (aref *readers* ,(type-code type))
              #',name))))
@@ -147,7 +148,7 @@
    *collection*))
 
 (defun write-top-level-object (object stream)
-  (if (typep object 'identifiable)
+  (if (typep object 'storable-object)
       (write-storable-object object stream)
       (write-object object stream)))
 
@@ -579,13 +580,13 @@
       (setf (slot-locations-and-initforms-read class) vector))
     (read-next-object stream)))
 
-;;; identifiable
+;;; storable-object
 
-(defmethod write-object ((object identifiable) stream)
+(defmethod write-object ((object storable-object) stream)
   (cond ((written object)
          (let* ((class (class-of object))
                 (class-id (write-object class stream)))
-           (write-n-bytes #.(type-code 'identifiable) 1 stream)
+           (write-n-bytes #.(type-code 'storable-link) 1 stream)
            (write-n-bytes class-id +class-id-length+ stream)
            (write-n-bytes (id object) +id-length+ stream)))
         (t
@@ -604,7 +605,7 @@
         (setf (gethash id index)
               (fast-allocate-instance class)))))
 
-(defreader identifiable (stream)
+(defreader storable-link (stream)
   (get-instance (read-n-bytes +class-id-length+ stream)
                 (read-n-bytes +id-length+ stream)))
 
@@ -635,16 +636,25 @@
               (write-object value stream)))
     (write-n-bytes +end+ 1 stream)))
 
-(defreader storable-object (stream)
+(defun set-id (object id)
+  (setf (id object) id)
+  (if (>= id (last-id *collection*))
+      (setf (last-id *collection*) (1+ id))))
+
+(defreader storable-object (stream &key top-level)
   (let* ((class-id (read-n-bytes +class-id-length+ stream))
          (id (read-n-bytes +id-length+ stream))
          (instance (get-instance class-id id))
          (class (class-of instance))
-         (slots (slot-locations-and-initforms-read class)))
+         (slots (slot-locations-and-initforms-read class))
+         (function *storable-object-hook*)
+         copy)
     (declare (simple-vector slots))
-    (setf (id instance) id)
-    (if (>= id (last-id *collection*))
-        (setf (last-id *collection*) (1+ id)))
+    (cond ((and function (id instance))
+           (setf copy (copy-object instance)))
+          (t
+           (set-id instance id)
+           (setf (written instance) t)))
     (loop for slot-id = (read-n-bytes 1 stream)
           until (= slot-id +end+)
           do
@@ -654,6 +664,9 @@
                   (if (= code +unbound-slot+)
                       'sb-pcl::..slot-unbound..
                       (call-reader code stream)))))
+    (when function
+      (funcall function instance :copy copy
+                                 :top-level top-level))
     instance))
 
 ;;; standard-class
@@ -792,11 +805,18 @@
 
 (defun read-file (function file)
   (with-io-file (stream file)
-    (loop until (stream-end-of-file-p stream)
-          do (let ((object (read-next-object stream)))
-               (when (and (not (typep object 'class))
-                          (typep object 'standard-object))
-                 (funcall function object))))))
+    (let ((*storable-object-hook* function))
+      (loop until (stream-end-of-file-p stream)
+            do
+            (let ((code (read-n-bytes 1 stream)))
+              (case code
+                (#.(type-code 'storable-object)
+                 (storable-object-reader stream :top-level t))
+                (#.(type-code 'standard-object)
+                 (funcall function (standard-object-reader stream)
+                          :top-level t))
+                (t
+                 (call-reader code stream))))))))
 
 (defun load-data (collection file function)
   (with-collection collection

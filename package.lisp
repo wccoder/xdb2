@@ -37,4 +37,7 @@
    :add-db
    :enable-sequences
    :next-sequence
-   :sort-docs))
+   :sort-docs
+   :load-data
+   :storable-object
+   :top-level))
