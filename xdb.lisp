@@ -152,11 +152,10 @@ sort-collection, sort-collection-temporary and union-collection. "))
 (defmethod load-from-file ((collection collection) file)
   (when (probe-file file)
     (load-data collection file
-               (lambda (object &key copy top-level)
+               (lambda (object &key copy)
                  (declare (ignore copy))
-                 (when top-level
-                   (add-doc collection object
-                            :duplicate-doc-p-func nil))))))
+                 (add-doc collection object
+                          :duplicate-doc-p-func nil)))))
 
 (defgeneric get-collection (xdb name)
     (:documentation "Returns the collection by name."))

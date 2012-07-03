@@ -641,7 +641,7 @@
   (if (>= id (last-id *collection*))
       (setf (last-id *collection*) (1+ id))))
 
-(defreader storable-object (stream &key top-level)
+(defreader storable-object (stream)
   (let* ((class-id (read-n-bytes +class-id-length+ stream))
          (id (read-n-bytes +id-length+ stream))
          (instance (get-instance class-id id))
@@ -665,8 +665,7 @@
                       'sb-pcl::..slot-unbound..
                       (call-reader code stream)))))
     (when function
-      (funcall function instance :copy copy
-                                 :top-level top-level))
+      (funcall function instance :copy copy))
     instance))
 
 ;;; standard-class
@@ -811,10 +810,9 @@
             (let ((code (read-n-bytes 1 stream)))
               (case code
                 (#.(type-code 'storable-object)
-                 (storable-object-reader stream :top-level t))
+                 (storable-object-reader stream))
                 (#.(type-code 'standard-object)
-                 (funcall function (standard-object-reader stream)
-                          :top-level t))
+                 (funcall function (standard-object-reader stream)))
                 (t
                  (call-reader code stream))))))))
 

@@ -111,14 +111,7 @@
 ;;;
 
 (defclass storable-object (standard-object)
-  ((collection :initarg :collection
-               :initform nil
-               :accessor collection
-               :storep nil)
-   (top-level :initarg :top-level
-              :initform nil
-              :accessor top-level)
-   (id :initform nil
+  ((id :initform nil
        :accessor id
        :storep nil)
    (written :initform nil
