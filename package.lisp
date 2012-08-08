@@ -40,4 +40,6 @@
    :sort-docs
    :load-data
    :storable-object
-   :top-level))
+   :top-level
+   :delete-doc
+   :*storable-object-delete-hook*))

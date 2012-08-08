@@ -135,6 +135,14 @@ sort-collection, sort-collection-temporary and union-collection. "))
     (save-doc collection doc path))
   doc)
 
+(defgeneric delete-doc (collection doc))
+
+(defmethod delete-doc ((collection collection) doc)
+  (let ((path (make-pathname :type "log" :defaults (path collection))))
+    (ensure-directories-exist path)
+    (%delete-doc collection doc path))
+  doc)
+
 (defgeneric serialize-docs (collection &key duplicate-doc-p-func)
   (:documentation "Store all the docs in the collection on file and add it to the collection."))
 
@@ -155,14 +163,14 @@ sort-collection, sort-collection-temporary and union-collection. "))
                (lambda (object &key copy)
                  (declare (ignore copy))
                  (add-doc collection object
-                          :duplicate-doc-p-func nil)))))
+                          :duplicate-doc-p-func nil))
+               (constantly nil))))
 
 (defgeneric get-collection (xdb name)
     (:documentation "Returns the collection by name."))
 
 (defmethod get-collection ((db xdb) name)
   (gethash name (collections db)))
-
 
 (defgeneric add-collection (xdb name &key load-from-file-p)
   (:documentation "Adds a collection to the db."))

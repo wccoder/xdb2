@@ -49,7 +49,8 @@
       array
       hash-table
       pathname
-      collection)))
+      collection
+      delete-marker)))
 
 (defvar *statistics* ())
 (defun collect-stats (code)
@@ -62,6 +63,7 @@
 
 (defvar *collection* nil)
 (defvar *storable-object-hook* nil)
+(defvar *storable-object-delete-hook* nil)
 
 (defvar *classes*)
 (defvar *packages*)
@@ -777,6 +779,22 @@
   (declare (ignore stream))
   *collection*)
 
+;;; delete
+
+(defun write-delete-marker (object stream)
+  (when (written object)
+    (write-n-bytes #.(type-code 'delete-marker) 1 stream)
+    (let* ((class (class-of object))
+           (class-id (write-object class stream)))
+      (write-n-bytes class-id +class-id-length+ stream)
+      (write-n-bytes (id object) +id-length+ stream))))
+
+(defreader delete-marker (stream)
+  (let* ((class-id (read-n-bytes +class-id-length+ stream))
+         (id (read-n-bytes +id-length+ stream))
+         (object (get-instance class-id id)))
+    (funcall *storable-object-delete-hook* object)))
+
 ;;;
 #+sbcl (declaim (inline %fast-allocate-instance))
 
@@ -802,9 +820,10 @@
   (setf (classes collection) (make-class-cache)
         (packages collection) (make-s-packages)))
 
-(defun read-file (function file)
+(defun read-file (file add-function delete-function)
   (with-io-file (stream file)
-    (let ((*storable-object-hook* function))
+    (let ((*storable-object-hook* add-function)
+          (*storable-object-delete-hook* delete-function))
       (loop until (stream-end-of-file-p stream)
             do
             (let ((code (read-n-bytes 1 stream)))
@@ -812,13 +831,13 @@
                 (#.(type-code 'storable-object)
                  (storable-object-reader stream))
                 (#.(type-code 'standard-object)
-                 (funcall function (standard-object-reader stream)))
+                 (funcall add-function (standard-object-reader stream)))
                 (t
                  (call-reader code stream))))))))
 
-(defun load-data (collection file function)
+(defun load-data (collection file add-function delete-function)
   (with-collection collection
-    (read-file function file)))
+    (read-file file add-function delete-function)))
 
 (defun save-data (collection &optional file)
   (let ((*written-objects* (make-hash-table :test 'eq)))
@@ -837,3 +856,10 @@
                      :direction :output
                      :append t)
         (write-top-level-object document stream)))))
+
+(defun %delete-doc (collection document &optional file)
+  (with-collection collection
+    (with-io-file (stream file
+                   :direction :output
+                   :append t)
+      (write-delete-marker document stream))))
