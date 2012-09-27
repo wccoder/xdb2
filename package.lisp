@@ -42,4 +42,6 @@
    :storable-object
    :top-level
    :delete-doc
-   :*storable-object-delete-hook*))
+   :*storable-object-delete-hook*
+   :written
+   :id))

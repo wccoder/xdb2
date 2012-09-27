@@ -584,13 +584,33 @@
 
 ;;; storable-object
 
+(defun write-objects-inside-slots (object stream)
+  (flet ((write-changed (x)
+           (cond ((not (typep x 'storable-object)))
+                 ((written x)
+                  (write-objects-inside-slots x stream))
+                 (t
+                  (write-storable-object x stream)))))
+    (loop for (slot-loc) across (slot-locations-and-initforms (class-of object))
+          for value = (standard-instance-access object slot-loc)
+          do
+          (cond ((consp value)
+                 (loop for (x) on value
+                       do (write-changed x)))
+                ((and (vectorp value)
+                      (not (stringp value)))
+                 (loop for x across value
+                       do (write-changed x)))
+                (t (write-changed value))))))
+
 (defmethod write-object ((object storable-object) stream)
   (cond ((written object)
          (let* ((class (class-of object))
                 (class-id (write-object class stream)))
            (write-n-bytes #.(type-code 'storable-link) 1 stream)
            (write-n-bytes class-id +class-id-length+ stream)
-           (write-n-bytes (id object) +id-length+ stream)))
+           (write-n-bytes (id object) +id-length+ stream)
+           (write-objects-inside-slots object stream)))
         (t
          (write-storable-object object stream))))
 
