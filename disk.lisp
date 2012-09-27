@@ -614,8 +614,7 @@
                 (class-id (write-object class stream)))
            (write-n-bytes #.(type-code 'storable-link) 1 stream)
            (write-n-bytes class-id +class-id-length+ stream)
-           (write-n-bytes (id object) +id-length+ stream)
-           (write-objects-inside-slots object stream)))
+           (write-n-bytes (id object) +id-length+ stream)))
         (t
          (write-storable-object object stream))))
 
@@ -641,6 +640,7 @@
 ;;; Can't use write-object method, because it would conflict with
 ;;; writing a pointer to a standard object
 (defun write-storable-object (object stream)
+  (write-objects-inside-slots object stream)
   (let* ((class (class-of object))
          (slots (slot-locations-and-initforms class))
          (class-id (write-object class stream)))
