@@ -150,9 +150,11 @@
    *collection*))
 
 (defun write-top-level-object (object stream)
-  (if (typep object 'storable-object)
-      (write-storable-object object stream)
-      (write-object object stream)))
+  (cond ((typep object 'storable-object)
+         (write-objects-inside-slots object stream)
+         (write-storable-object object stream))
+        (t 
+         (write-object object stream))))
 
 (declaim (inline read-next-object))
 (defun read-next-object (stream)
@@ -640,7 +642,6 @@
 ;;; Can't use write-object method, because it would conflict with
 ;;; writing a pointer to a standard object
 (defun write-storable-object (object stream)
-  (write-objects-inside-slots object stream)
   (let* ((class (class-of object))
          (slots (slot-locations-and-initforms class))
          (class-id (write-object class stream)))
