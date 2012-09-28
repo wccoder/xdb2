@@ -649,8 +649,8 @@
     (write-n-bytes #.(type-code 'storable-object) 1 stream)
     (write-n-bytes class-id +class-id-length+ stream)
     (unless (id object)
-      (setf (id object) (last-id *collection*))
-      (incf (last-id *collection*)))
+      (setf (id object) (last-id class))
+      (incf (last-id class)))
     (write-n-bytes (id object) +id-length+ stream)
     (setf (written object) t)
     (loop for id below (length slots)
@@ -664,10 +664,10 @@
               (write-object value stream)))
     (write-n-bytes +end+ 1 stream)))
 
-(defun set-id (object id)
+(defun set-id (class object id)
   (setf (id object) id)
-  (if (>= id (last-id *collection*))
-      (setf (last-id *collection*) (1+ id))))
+  (if (>= id (last-id class))
+      (setf (last-id class) (1+ id))))
 
 (defreader storable-object (stream)
   (let* ((class-id (read-n-bytes +class-id-length+ stream))
@@ -681,7 +681,7 @@
     (cond ((and function (id instance))
            (setf copy (copy-object instance)))
           (t
-           (set-id instance id)
+           (set-id class instance id)
            (setf (written instance) t)))
     (loop for slot-id = (read-n-bytes 1 stream)
           until (= slot-id +end+)

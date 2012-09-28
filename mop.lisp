@@ -21,6 +21,8 @@
     :accessor all-slot-locations-and-initforms)
    (initforms :initform #()
 	      :accessor class-initforms)
+   (last-id :initform 0
+            :accessor last-id)
    (id-cache :initarg :id-cache
              :initform (make-hash-table :size 1000)
              :accessor id-cache)))
