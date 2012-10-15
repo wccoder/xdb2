@@ -551,7 +551,8 @@
   (setf (aref *classes* id) class))
 
 (defmethod write-object ((class storable-class) stream)
-  (cond ((position class *classes* :test #'eq))
+  (cond ((and (written class)
+              (position class *classes* :test #'eq)))
         (t
          (unless (class-finalized-p class)
            (finalize-inheritance class))
@@ -564,6 +565,9 @@
            (loop for slot across slots
                  do (write-object (slot-definition-name slot)
                                   stream))
+           (setf (written class) t
+                 (slot-locations-read class)
+                 (map 'vector #'car (slot-locations-and-initforms  class)))
            id))))
 
 (defreader storable-class (stream)
@@ -578,10 +582,9 @@
             for slot-d =
             (slot-effective-definition class (read-next-object stream))
             when slot-d
-            do (setf (aref vector i)
-                     (cons (slot-definition-location slot-d)
-                           (slot-definition-initform slot-d))))
-      (setf (slot-locations-and-initforms-read class) vector))
+            do (setf (aref vector i) (slot-definition-location slot-d)))
+      (setf (slot-locations-read class) vector)
+      (setf (written class) (not (class-changed-after-read class))))
     (read-next-object stream)))
 
 ;;; storable-object
@@ -674,7 +677,7 @@
          (id (read-n-bytes +id-length+ stream))
          (instance (get-instance class-id id))
          (class (class-of instance))
-         (slots (slot-locations-and-initforms-read class))
+         (slots (slot-locations-read class))
          (function *storable-object-hook*)
          copy)
     (declare (simple-vector slots))
@@ -687,7 +690,7 @@
           until (= slot-id +end+)
           do
           (setf (standard-instance-access instance
-                                          (car (aref slots slot-id)))
+                                          (aref slots slot-id))
                 (let ((code (read-n-bytes 1 stream)))
                   (if (= code +unbound-slot+)
                       'sb-pcl::..slot-unbound..
