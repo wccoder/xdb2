@@ -577,7 +577,7 @@
     (unless (class-finalized-p class)
       (finalize-inheritance class))
     (let* ((length (read-n-bytes +sequence-length+ stream))
-           (vector (make-array length)))
+           (vector (make-array length :initial-element nil)))
       (loop for i below length
             for slot-d =
             (slot-effective-definition class (read-next-object stream))
@@ -689,12 +689,14 @@
     (loop for slot-id = (read-n-bytes 1 stream)
           until (= slot-id +end+)
           do
-          (setf (standard-instance-access instance
-                                          (aref slots slot-id))
-                (let ((code (read-n-bytes 1 stream)))
-                  (if (= code +unbound-slot+)
-                      'sb-pcl::..slot-unbound..
-                      (call-reader code stream)))))
+          (let* ((location (aref slots slot-id))
+                 (code (read-n-bytes 1 stream))
+                 (value (if (= code +unbound-slot+)
+                            'sb-pcl::..slot-unbound..
+                            (call-reader code stream))))
+            (when location
+              (setf (standard-instance-access instance location)
+                    value))))
     (when function
       (funcall function instance :copy copy))
     instance))
@@ -725,11 +727,7 @@
       (finalize-inheritance class))
     (let ((length (read-n-bytes +sequence-length+ stream)))
       (loop for i below length
-            do (slot-effective-definition class (read-next-object stream))
-            ;;do  (setf (aref vector i)
-            ;;       (cons (slot-definition-location slot-d)
-            ;;             (slot-definition-initform slot-d)))
-            ))
+            do (slot-effective-definition class (read-next-object stream))))
     (read-next-object stream)))
 
 ;;; standard-link
