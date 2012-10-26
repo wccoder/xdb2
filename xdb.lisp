@@ -396,11 +396,28 @@ of sorted docs."))
 
 (defgeneric next-sequence (xdb key))
 
+(defun get-sequence-max (collection value)
+  (let ((max 0)
+        (return-doc))
+    (map-docs
+     nil
+     (lambda (doc)
+       (when (equal (get-val doc 'key) value)
+         (when (> (get-val doc 'value) max)
+             (setf max (get-val doc 'value))
+             (setf return-doc doc))))
+     collection)
+    return-doc))
+
+
 (defmethod next-sequence ((xdb xdb) key)
-  (let ((doc (get-doc (get-collection xdb "sequences") key)))
+  (let ((doc (get-sequence-max (get-collection xdb "sequences") key)))
     (unless doc
+
       (setf doc (make-instance 'xdb-sequence :key key :value 0)))
     (incf (get-val doc 'value))
-    (store-doc (get-collection xdb "sequences")
+    (serialize-doc (get-collection xdb "sequences")
                 doc)
     (get-val doc 'value)))
+
+
