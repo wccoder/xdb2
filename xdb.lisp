@@ -413,8 +413,8 @@ of sorted docs."))
 (defmethod next-sequence ((xdb xdb) key)
   (let ((doc (get-sequence-max (get-collection xdb "sequences") key)))
     (unless doc
-
-      (setf doc (make-instance 'xdb-sequence :key key :value 0)))
+      (setf doc (make-instance 'xdb-sequence :key key :value 0))
+      (vector-push-extend doc (docs (get-collection xdb "sequences"))))
     (incf (get-val doc 'value))
     (serialize-doc (get-collection xdb "sequences")
                 doc)
