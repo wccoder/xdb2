@@ -158,8 +158,7 @@ sort-collection, sort-collection-temporary and union-collection. "))
 (defmethod load-from-file ((collection collection) file)
   (when (probe-file file)
     (load-data collection file
-               (lambda (object &key copy)
-                 (declare (ignore copy))
+               (lambda (object)
                  (add-doc collection object
                           :duplicate-doc-p-func nil))
                (constantly nil))))
@@ -187,8 +186,8 @@ sort-collection, sort-collection-temporary and union-collection. "))
                         (setf (gethash name (collections db))
                               (make-new-collection name db
                                                    :collection-class collection-class)))))
-    (ensure-directories-exist (path collection))
     (when load-from-file-p
+      (ensure-directories-exist (path collection))
       (load-from-file collection
                       (make-pathname :defaults (path collection)
                                      :type "snap"))
@@ -420,5 +419,4 @@ of sorted docs."))
     (serialize-doc (get-collection xdb "sequences")
                 doc)
     (get-val doc 'value)))
-
 

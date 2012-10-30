@@ -27,21 +27,37 @@
             :initform 0
             :accessor version)))
 
-(defun initialize-storable-class (next-method class &rest args
+(defclass storable-versioned-class (storable-class)
+  ())
+
+(defun initialize-storable-class (next-method class default-superclass
+                                  &rest args
                                   &key direct-superclasses &allow-other-keys)
   (apply next-method class
          (if direct-superclasses
              args
-             (list* :direct-superclasses (list (find-class 'storable-object))
+             (list* :direct-superclasses (list (find-class default-superclass))
                     args))))
 
 (defmethod initialize-instance :around ((class storable-class)
                                         &rest args)
-  (apply #'initialize-storable-class #'call-next-method class args))
+  (apply #'initialize-storable-class #'call-next-method
+         class 'storable-object args))
 
 (defmethod reinitialize-instance :around ((class storable-class)
                                           &rest args)
-  (apply #'initialize-storable-class #'call-next-method class args))
+  (apply #'initialize-storable-class #'call-next-method
+         class 'storable-object args))
+
+(defmethod initialize-instance :around ((class storable-versioned-class)
+                                        &rest args)
+  (apply #'initialize-storable-class #'call-next-method
+         class 'storable-versioned-object args))
+
+(defmethod reinitialize-instance :around ((class storable-versioned-class)
+                                          &rest args)
+  (apply #'initialize-storable-class #'call-next-method
+         class 'storable-versioned-object args))
 
 ;;;
 
@@ -58,7 +74,10 @@
 (defclass storable-slot-mixin ()
   ((storep :initarg :storep
            :initform t
-           :accessor store-slot-p)))
+           :accessor store-slot-p)
+   (key :initarg :key
+        :initform nil
+        :accessor key)))
 
 (defclass storable-direct-slot-definition (storable-slot-mixin
                                            standard-direct-slot-definition)
@@ -84,7 +103,9 @@
         (direct-definition (car direct-definitions)))
     (when (typep direct-definition 'storable-direct-slot-definition)
       (setf (store-slot-p effective-definition)
-            (store-slot-p direct-definition)))
+          (store-slot-p direct-definition)
+          (key effective-definition)
+          (key direct-definition)))
     effective-definition))
 
 (defun make-slots-cache (slot-definitions)
@@ -122,3 +143,43 @@
             :accessor written
             :storep nil))
   (:metaclass storable-class))
+
+;;;
+
+(defclass storable-versioned-object (storable-object)
+  ((old-versions :initarg :old-versions
+                 :initform nil
+                 :accessor old-versions
+                 :storep nil)
+   (stamp-date :initarg :stamp-date
+               :initform nil
+               :accessor stamp-date)
+   (effective-date :initarg :effective-date
+                   :initform nil
+                   :accessor effective-date))
+  (:metaclass storable-versioned-class))
+
+(defmethod version ((object storable-versioned-class))
+  (1+ (length (old-versions object))))
+
+(defvar *inhibit-change-marking* nil)
+
+(defgeneric supersede (object old-object)
+  (:method ((object t) (old-object t))))
+
+(defmethod supersede ((object storable-versioned-object) old-object)
+  (let ((*inhibit-change-marking* t))
+    (push old-object (old-versions object))
+    (setf (old-versions old-object) nil)))
+
+(defmethod (setf slot-value-using-class)
+    (new-value (class storable-versioned-class) object slotd)
+  (when (and (not *inhibit-change-marking*)
+             (slot-boundp-using-class class object slotd)
+             (written object))
+    (let ((current-value (slot-value-using-class class object slotd))
+          (*inhibit-change-marking* t))
+      (unless (equal new-value current-value)
+        (setf (written object) nil)
+        (supersede object (copy-object object)))))
+  (call-next-method))

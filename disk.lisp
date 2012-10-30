@@ -60,7 +60,8 @@
       hash-table
       pathname
       collection
-      delete-marker)))
+      delete-marker
+      storable-versioned-object)))
 
 (defvar *statistics* ())
 (defun collect-stats (code)
@@ -77,13 +78,24 @@
 
 (defvar *classes*)
 (defvar *packages*)
+
 (declaim (vector *classes* *packages*))
 
 (defvar *indexes*)
-(declaim (hash-table *indexes*))
+(defvar *object-cache*)
+(declaim (hash-table *indexes*
+                     *object-cache*))
+
+(defvar *db*)
+(defvar *import* nil)
+(defvar *export* nil)
+(defvar *export-last-id*)
 
 (defvar *written-objects*)
-(declaim (hash-table *indexes*))
+(declaim (hash-table *written-objects*))
+
+(defvar *export-test-function*)
+(declaim (function *export-test-function*))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun type-code (type)
@@ -142,8 +154,19 @@
             (*collection* ,collection-sym)
             (*packages* (packages ,collection-sym))
             (*classes* (classes ,collection-sym))
-            (*indexes* (id-cache ,collection-sym)))
+            (*indexes* (id-cache ,collection-sym))
+            (*object-cache* (object-cache ,collection-sym)))
        ,@body)))
+
+(defun is-written (object)
+  (if *export*
+      (gethash object *written-objects*)
+      (written object)))
+
+(defun set-written (object)
+  (if *export*
+      (setf (gethash object *written-objects*) t)
+      (setf (written object) t)))
 
 ;;;
 
@@ -160,11 +183,17 @@
    *collection*))
 
 (defun write-top-level-object (object stream)
-  (cond ((typep object 'storable-object)
-         (write-objects-inside-slots object stream)
-         (write-storable-object object stream))
-        (t
-         (write-object object stream))))
+  (typecase object
+    (storable-versioned-object
+     (unless *export*
+       (write-objects-inside-slots object stream))
+     (write-storable-versioned-object object stream))
+    (storable-object
+     (unless *export*
+       (write-objects-inside-slots object stream))
+     (write-storable-object object stream))
+    (t 
+     (write-object object stream))))
 
 (declaim (inline read-next-object))
 (defun read-next-object (stream)
@@ -668,6 +697,8 @@
                      ((written x)
                       (setf (gethash x visited) t)
                       (recurse x))
+                     ((typep x 'storable-versioned-object)
+                      (write-storable-versioned-object x stream))
                      (t
                       (write-storable-object x stream))))
              (recurse (object)
@@ -685,12 +716,14 @@
       (recurse object))))
 
 (defmethod write-object ((object storable-object) stream)
-  (cond ((written object)
+  (cond ((is-written object)
          (let* ((class (class-of object))
                 (class-id (write-object class stream)))
            (write-n-bytes #.(type-code 'storable-link) 1 stream)
            (write-n-bytes class-id +class-id-length+ stream)
            (write-n-bytes (id object) +id-length+ stream)))
+        ((typep object 'storable-versioned-object)
+         (write-storable-versioned-object object stream))
         (t
          (write-storable-object object stream))))
 
@@ -705,31 +738,45 @@
                     proxy))
          (index (if (typep class 'storable-class)
                     (id-cache class)
-                    *indexes*)))
-    (or (gethash id index)
-        (setf (gethash id index)
-              (fast-allocate-instance class)))))
+                    *indexes*))
+         (existing (gethash id index)))
+    (values (or existing
+                (setf (gethash id index)
+                      (fast-allocate-instance class)))
+            id
+            (and existing t))))
 
-(defreader storable-link (stream)
+(defun read-instance (stream)
   (get-instance (read-n-bytes +class-id-length+ stream)
                 (read-n-bytes +id-length+ stream)))
 
+(defreader storable-link (stream)
+  (read-instance stream))
+
 ;;; storable-object
 
-;;; Can't use write-object method, because it would conflict with
-;;; writing a pointer to a standard object
-(defun write-storable-object (object stream)
+(defun assign-id (object)
+  (cond (*export*
+         (get-object-id object))
+        ((id object))
+        (t
+         (setf (id object)
+               (1- (incf (last-id (class-of object))))))))
+
+(defun write-storable-object-common (type-code object stream
+                                     &key before)
   (let* ((class (class-of object))
          (slots (slot-locations-and-initforms class))
-         (class-id (write-object class stream)))
-    (declare (simple-vector slots))
-    (write-n-bytes #.(type-code 'storable-object) 1 stream)
+         (class-id (write-object class stream))
+         (id (assign-id object)))
+    (declare (simple-vector slots)
+             (fixnum type-code)) 
+    (write-n-bytes type-code 1 stream)
+    (when before
+      (funcall before stream))
     (write-n-bytes class-id +class-id-length+ stream)
-    (unless (id object)
-      (setf (id object) (last-id class))
-      (incf (last-id class)))
-    (write-n-bytes (id object) +id-length+ stream)
-    (setf (written object) t)
+    (write-n-bytes id +id-length+ stream)
+    (set-written object)
     (loop for id below (length slots)
           for (location . initform) = (aref slots id)
           for value = (standard-instance-access object location)
@@ -741,10 +788,30 @@
               (write-object value stream)))
     (write-n-bytes +end+ 1 stream)))
 
+(defun write-storable-object (object stream)
+  (write-storable-object-common #.(type-code 'storable-object)
+                                object stream))
+
+(defun write-storable-versioned-object (object stream)
+  (let ((*inhibit-change-marking* t)
+        (previous (car (old-versions object))))
+    (when (and previous
+               (not (effective-date previous)))
+      (setf (effective-date previous)
+            (stamp-date object)))
+    (write-storable-object-common #.(type-code 'storable-versioned-object)
+                                  object stream
+                                  :before
+                                  (when *export*
+                                    (lambda (stream)
+                                      (write-object (old-versions object)
+                                                    stream))))))
+
 (defun set-id (class object id)
   (setf (id object) id)
-  (if (>= id (last-id class))
-      (setf (last-id class) (1+ id))))
+  (when (>= id (last-id class))
+    (setf (last-id class) (1+ id))))
+
 
 (defun clear-previous-version (object)
   (loop for (location . initform) across
@@ -767,21 +834,58 @@
            (clear-previous-version instance))
           (t
            (set-id class instance id)
-           (setf (written instance) t)))
-    (loop for slot-id = (read-n-bytes 1 stream)
-          until (= slot-id +end+)
-          do
-          (let* ((location (aref slots slot-id))
-                 (code (read-n-bytes 1 stream))
-                 (value (if (= code +unbound-slot+)
-                            'sb-pcl::..slot-unbound..
-                            (call-reader code stream))))
-            (when location
-              (setf (standard-instance-access instance location)
-                    value))))
-    (when function
-      (funcall function instance :copy copy))
-    instance))
+           (setf (written instance) t)))))
+
+(defun read-slots (object slots stream)
+  (declare (simple-vector slots))
+  (loop for slot-id = (read-n-bytes 1 stream)
+        until (= slot-id +end+)
+        do
+        (let* ((location (aref slots slot-id))
+               (code (read-n-bytes 1 stream))
+               (value (if (= code +unbound-slot+)
+                          'sb-pcl::..slot-unbound..
+                          (call-reader code stream))))
+          (when location
+            (setf (standard-instance-access object location)
+                  value)))))
+
+(defun assign-read-id (object id)
+  (cond ((id object))
+        (*import*
+         (assign-id object))
+        (t
+         (set-id (class-of object) object id)
+         (setf (written object) t))))
+
+(defreader storable-object (stream)
+  (let ((class-id (read-n-bytes +class-id-length+ stream))
+        (id (read-n-bytes +id-length+ stream))
+        (class (class-of instance))
+        (proxy (get-class class-id))
+        (slots (proxy-slot-locations proxy)))
+    (multiple-value-bind (object id existing) (read-instance stream)
+      ;; To work with the old db files, this supports versioning as well
+      (let ((copy (when existing
+                    (prog1 (copy-object object)
+                      (clear-previous-version object)))))
+        (assign-read-id object id)
+        (read-slots object slots stream)
+        (cond (copy
+               (supersede object copy))
+              (*storable-object-hook*
+               (funcall *storable-object-hook* object))))
+      object)))
+
+(defreader storable-versioned-object (stream)
+  (let ((old-versions
+          (when *import*
+            (let (*storable-object-hook*)
+             (read-next-object stream))))
+        (object (storable-object-reader stream)))
+    (when *import*
+      (setf (old-versions object) old-versions))
+    object))
 
 ;;; standard-class
 
@@ -822,18 +926,16 @@
     (write-n-bytes (get-object-id object) +id-length+ stream)))
 
 (defreader standard-link (stream)
-  (get-instance (read-n-bytes +class-id-length+ stream)
-                (read-n-bytes +id-length+ stream)))
+  (read-instance stream))
 
 ;;; standard-object
 
 (defun get-object-id (object)
-  (let ((cache (object-cache *collection*)))
-    (or (gethash object cache)
-        (prog1
-            (setf (gethash object cache)
-                  (last-id *collection*))
-          (incf (last-id *collection*))))))
+  (or (gethash object *object-cache*)
+      (setf (gethash object *object-cache*)
+            (if *export*
+                (1- (incf *export-last-id*))
+                (1- (incf (last-id *collection*)))))))
 
 (defmethod write-object ((object standard-object) stream)
   (if (gethash object *written-objects*)
@@ -858,37 +960,40 @@
         (write-n-bytes +end+ 1 stream))))
 
 (defreader standard-object (stream)
-  (let* ((class-id (read-n-bytes +class-id-length+ stream))
-         (id (read-n-bytes +id-length+ stream))
-         (instance (get-instance class-id id))
-         (class (class-of instance))
-         (slots (class-slots class)))
-    (if (>= id (last-id *collection*))
-        (setf (last-id *collection*) (1+ id)))
-    (flet ((read-slot ()
-             (let ((code (read-n-bytes 1 stream)))
-               (if (= code +unbound-slot+)
-                   'sb-pcl::..slot-unbound..
-                   (call-reader code stream)))))
-      (loop for slot-id = (read-n-bytes 1 stream)
-            until (= slot-id +end+)
-            do
-            (let ((slot (nth slot-id slots)))
-              (if slot
-                  (setf (standard-instance-access instance
-                                                  (slot-definition-location slot))
-                        (read-slot))
-                  (read-slot)))))
-    instance))
+  (multiple-value-bind (instance id) (read-instance stream)
+   (let* ((class (class-of instance))
+          (slots (class-slots class)))
+     (when (and (not *import*)
+                (>= id (last-id *collection*)))
+       (setf (last-id *collection*) (1+ id)))
+     (flet ((read-slot ()
+              (let ((code (read-n-bytes 1 stream)))
+                (if (= code +unbound-slot+)
+                    'sb-pcl::..slot-unbound..
+                    (call-reader code stream)))))
+       (loop for slot-id = (read-n-bytes 1 stream)
+             until (= slot-id +end+)
+             do
+             (let ((slot (nth slot-id slots)))
+               (if slot
+                   (setf (standard-instance-access instance
+                                                   (slot-definition-location slot))
+                         (read-slot))
+                   (read-slot)))))
+     instance)))
 
 ;;; collection
 
 (defmethod write-object ((collection collection) stream)
-  (write-n-bytes #.(type-code 'collection) 1 stream))
+  (write-n-bytes #.(type-code 'collection) 1 stream)
+  (when *export*
+    (write-object (name collection) stream)))
 
 (defreader collection (stream)
-  (declare (ignore stream))
-  *collection*)
+  (if *import*
+      (add-collection *db*
+                      (read-next-object stream))
+      *collection*))
 
 ;;; delete
 
@@ -901,10 +1006,8 @@
       (write-n-bytes (id object) +id-length+ stream))))
 
 (defreader delete-marker (stream)
-  (let* ((class-id (read-n-bytes +class-id-length+ stream))
-         (id (read-n-bytes +id-length+ stream))
-         (object (get-instance class-id id)))
-    (funcall *storable-object-delete-hook* object)))
+  (funcall *storable-object-delete-hook*
+           (read-instance stream)))
 
 ;;;
 #+sbcl (declaim (inline %fast-allocate-instance))
@@ -987,3 +1090,58 @@
                      :direction :output
                      :append t)
         (write-delete-marker document stream)))))
+
+;;; Export/import
+
+(defun export-db (db file test)
+  (let ((*written-objects* (make-hash-table :test 'eq))
+        (*packages* (make-s-packages))
+        (*classes* (make-class-cache))
+        (*indexes* (make-hash-table :size 1000))
+        (*object-cache* (make-hash-table :size 1000
+                                         :test #'eq))
+        (*export* t)
+        (*export-last-id* 0))
+    (with-io-file (stream file
+                   :direction :output)
+      (loop for *collection* being the hash-value
+            of (collections db)
+            do
+            (write-object (name *collection*) stream)
+            (loop for doc across (docs *collection*)
+                  when (funcall test doc)
+                  do (write-top-level-object doc stream))
+            (write-n-bytes +end+ 1 stream)))
+    (values)))
+
+(defun import-db (db file add-function)
+  (let ((*written-objects* (make-hash-table :test 'eq))
+        (*packages* (make-s-packages))
+        (*classes* (make-class-cache))
+        (*indexes* (make-hash-table :size 1000))
+        (*object-cache* (make-hash-table :size 1000
+                                         :test #'eq))
+        (*import* t))
+    (with-io-file (stream file)
+      (loop until (stream-end-of-file-p stream)
+            for *collection* = (add-collection db
+                                               (read-next-object stream))
+            for *storable-object-hook* =
+            (let ((collection *collection*))
+              (lambda (object)
+                (funcall add-function collection
+                         object)))
+            do
+            (loop for code = (read-n-bytes 1 stream)
+                  until (= code +end+)
+                  do
+                  (case code
+                    (#.(type-code 'storable-object)
+                     (storable-object-reader stream))
+                    (#.(type-code 'standard-object)
+                     (funcall *storable-object-hook*
+                              (standard-object-reader stream)))
+                    (t
+                     (call-reader code stream))))))
+    (values)))
+

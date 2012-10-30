@@ -44,4 +44,17 @@
    :delete-doc
    :*storable-object-delete-hook*
    :written
-   :id))
+   :id
+   :export-db
+   :import-db
+   :collections
+   :write-object
+   :before-write-storable-object
+   :storable-versioned-class
+   :storable-versioned-object
+   :old-versions
+   :stamp-date
+   :effective-date
+   :version
+   :supersede
+   :*inhibit-change-marking*))

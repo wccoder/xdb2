@@ -17,6 +17,9 @@
   ((slot :initarg :slot
          :initform '("An" 1 #(0 -3) 1d0 #(1/4 'foo) . #\s)
          :accessor slot)
+   (script :initarg :script
+           :initform '(+ (parse-number x) 10)
+           :accessor script) 
    (foo :initarg :foo
         :initform nil
         :accessor foo))
