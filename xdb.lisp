@@ -157,11 +157,7 @@ sort-collection, sort-collection-temporary and union-collection. "))
 
 (defmethod load-from-file ((collection collection) file)
   (when (probe-file file)
-    (load-data collection file
-               (lambda (object)
-                 (add-doc collection object
-                          :duplicate-doc-p-func nil))
-               (constantly nil))))
+    (load-data collection file)))
 
 (defgeneric get-collection (xdb name)
     (:documentation "Returns the collection by name."))

@@ -141,7 +141,14 @@
        :storep nil)
    (written :initform nil
             :accessor written
-            :storep nil))
+            :storep nil)
+   (collection :initarg :collection
+               :initform nil
+               :accessor collection
+               :storep nil)
+   (top-level :initarg :top-level
+              :initform nil
+              :accessor top-level))
   (:metaclass storable-class))
 
 ;;;

@@ -7,8 +7,10 @@
          :initform nil
          :accessor name)
    (path :initarg :path
+         :initform nil
          :accessor path)
    (docs :initarg :docs
+         :initform nil
          :accessor docs)
    (packages :initform (make-s-packages)
              :accessor packages)
@@ -16,8 +18,7 @@
             :accessor classes)
    (last-id :initform 0
             :accessor last-id)
-   (object-cache :initarg :object-cache
-                 :initform (make-hash-table :size 1000
+   (object-cache :initform (make-hash-table :size 1000
                                             :test 'eq)
                  :accessor object-cache)
    (id-cache :initarg :id-cache
@@ -32,6 +33,11 @@
 (defmethod print-object ((object collection) stream)
   (print-unreadable-object (object stream :type t :identity t)
     (princ (name object) stream)))
+
+(defmethod print-object ((object collection) stream)
+  (print-unreadable-object (object stream :type t :identity t)
+    (when (slot-boundp object 'name)
+      (princ (name object) stream))))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *codes*
@@ -192,7 +198,7 @@
      (unless *export*
        (write-objects-inside-slots object stream))
      (write-storable-object object stream))
-    (t 
+    (t
      (write-object object stream))))
 
 (declaim (inline read-next-object))
@@ -770,7 +776,7 @@
          (class-id (write-object class stream))
          (id (assign-id object)))
     (declare (simple-vector slots)
-             (fixnum type-code)) 
+             (fixnum type-code))
     (write-n-bytes type-code 1 stream)
     (when before
       (funcall before stream))
@@ -858,12 +864,15 @@
          (set-id (class-of object) object id)
          (setf (written object) t))))
 
+(defvar *do-not-push-into-collection* nil)
+
 (defreader storable-object (stream)
   (let ((class-id (read-n-bytes +class-id-length+ stream))
         (id (read-n-bytes +id-length+ stream))
         (class (class-of instance))
         (proxy (get-class class-id))
-        (slots (proxy-slot-locations proxy)))
+        (slots (proxy-slot-locations proxy))
+        (*inhibit-change-marking* t))
     (multiple-value-bind (object id existing) (read-instance stream)
       ;; To work with the old db files, this supports versioning as well
       (let ((copy (when existing
@@ -874,15 +883,17 @@
         (cond ((and copy
                     (typep object 'storable-versioned-object))
                (supersede object copy :set-time t))
-              (*storable-object-hook*
-               (funcall *storable-object-hook* object))))
+              ((and (not *do-not-push-into-collection*)
+                    (top-level object))
+               (setf (collection object) *collection*)
+               (vector-push-extend object (docs *collection*)))))
       object)))
 
 (defreader storable-versioned-object (stream)
   (let ((old-versions
           (when *import*
-            (let (*storable-object-hook*)
-             (read-next-object stream))))
+            (let ((*do-not-push-into-collection* t))
+              (read-next-object stream))))
         (object (storable-object-reader stream)))
     (when *import*
       (setf (old-versions object) old-versions))
@@ -999,7 +1010,8 @@
 ;;; delete
 
 (defun write-delete-marker (object stream)
-  (when (written object)
+  (break)
+  (when (id object)
     (let* ((class (class-of object))
            (class-id (write-object class stream)))
       (write-n-bytes #.(type-code 'delete-marker) 1 stream)
@@ -1007,8 +1019,7 @@
       (write-n-bytes (id object) +id-length+ stream))))
 
 (defreader delete-marker (stream)
-  (funcall *storable-object-delete-hook*
-           (read-instance stream)))
+  (alexandria:deletef (docs *collection*) (read-instance stream)))
 
 ;;;
 #+sbcl (declaim (inline %fast-allocate-instance))
@@ -1035,20 +1046,6 @@
   (setf (classes collection) (make-class-cache)
         (packages collection) (make-s-packages)))
 
-(defun read-file (file add-function delete-function)
-  (with-io-file (stream file)
-    (let ((*storable-object-hook* add-function)
-          (*storable-object-delete-hook* delete-function))
-      (loop until (stream-end-of-file-p stream)
-            do
-            (let ((code (read-n-bytes 1 stream)))
-              (case code
-                (#.(type-code 'storable-object)
-                 (storable-object-reader stream))
-                (#.(type-code 'standard-object)
-                 (funcall add-function (standard-object-reader stream)))
-                (t
-                 (call-reader code stream))))))))
 
 ;;;
 
@@ -1056,13 +1053,26 @@
   `(bt:with-lock-held ((lock ,collection))
      ,@body))
 
-(defun load-data (collection file add-function delete-function)
+
+(defun save-data (collection &optional file)
+  (with-collection-lock collection
+    (let ((*written-objects* (make-hash-table :test 'eq)))
+      (clear-cache collection)
+      (with-collection collection
+        (with-io-file (stream file
+                       :direction :output)
+          (dump-data stream)))
+      (clear-cache collection)
+      (values))))
+
+(defun load-data (collection file)
   (with-collection-lock collection
     (when (loaded collection)
       (warn "Collection ~a cannot be loaded twice." collection))
     (with-collection collection
-      (read-file file add-function delete-function))
-    (setf (loaded collection) t)))
+      (with-io-file (stream file)
+        (loop until (stream-end-of-file-p stream)
+              do (read-next-object stream))))))
 
 (defun save-data (collection &optional file)
   (with-collection-lock collection
@@ -1115,7 +1125,7 @@
             (write-n-bytes +end+ 1 stream)))
     (values)))
 
-(defun import-db (db file add-function)
+(defun import-db (db file)
   (let ((*written-objects* (make-hash-table :test 'eq))
         (*packages* (make-s-packages))
         (*classes* (make-class-cache))
@@ -1127,22 +1137,9 @@
       (loop until (stream-end-of-file-p stream)
             for *collection* = (add-collection db
                                                (read-next-object stream))
-            for *storable-object-hook* =
-            (let ((collection *collection*))
-              (lambda (object)
-                (funcall add-function collection
-                         object)))
             do
             (loop for code = (read-n-bytes 1 stream)
                   until (= code +end+)
                   do
-                  (case code
-                    (#.(type-code 'storable-object)
-                     (storable-object-reader stream))
-                    (#.(type-code 'standard-object)
-                     (funcall *storable-object-hook*
-                              (standard-object-reader stream)))
-                    (t
-                     (call-reader code stream))))))
+                  (call-reader code stream))))
     (values)))
-
