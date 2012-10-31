@@ -871,8 +871,9 @@
                       (clear-previous-version object)))))
         (assign-read-id object id)
         (read-slots object slots stream)
-        (cond (copy
-               (supersede object copy))
+        (cond ((and copy
+                    (typep object 'storable-versioned-object))
+               (supersede object copy :set-time t))
               (*storable-object-hook*
                (funcall *storable-object-hook* object))))
       object)))

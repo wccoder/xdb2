@@ -164,11 +164,15 @@
 
 (defvar *inhibit-change-marking* nil)
 
-(defgeneric supersede (object old-object)
-  (:method ((object t) (old-object t))))
+(defgeneric supersede (object old-object &key)
+  (:method ((object t) (old-object t) &key)))
 
-(defmethod supersede ((object storable-versioned-object) old-object)
+(defmethod supersede ((object storable-versioned-object) old-object
+                      &key set-time)
   (let ((*inhibit-change-marking* t))
+    (when set-time
+      (setf (effective-date old-object)
+            (stamp-date object)))
     (push old-object (old-versions object))
     (setf (old-versions old-object) nil)))
 
