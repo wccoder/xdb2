@@ -650,6 +650,8 @@
                                     (proxy-class x)))))
 
 (defmethod write-object ((class storable-class) stream)
+  (unless (class-finalized-p class)
+    (finalize-inheritance class))
   (let ((proxy (find-class-proxy class)))
     (cond ((and proxy
                 (= (version class)
@@ -892,18 +894,23 @@
                               *collection*)))
         (assign-read-id object id)
         (read-slots object slots stream)
+        (when *import*
+          (setf (written object) nil))
         (cond ((and copy
-                    (typep object 'storable-versioned-object))
-               (supersede object copy :set-time t))
-              ((or (not (top-level object))
-                   *do-not-push-into-collection*))
-              ((and *import*
-                    (let ((existing (find-existing-doc object *collection*)))
-                      (and existing
-                           (setf object existing)))))
-              (t
-               (setf (collection object) *collection*)
-               (vector-push-extend object (docs *collection*)))))
+                  (typep object 'storable-versioned-object))
+             (supersede object copy :set-time t))
+            ((or (not (top-level object))
+                 *do-not-push-into-collection*))
+            ((and *import*
+                  (let ((existing (find-existing-doc object *collection*)))
+                    (and existing
+                         (setf object existing)))))
+            (t
+             (setf (collection object) *collection*)
+             (vector-push-extend object (docs *collection*))
+             (when *import*
+               (serialize-doc *collection*
+                              object)))))
       object)))
 
 (defreader storable-versioned-object (stream)
