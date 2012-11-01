@@ -20,12 +20,13 @@
 	      :accessor class-initforms)
    (last-id :initform 0
             :accessor last-id)
-   (id-cache :initarg :id-cache
-             :initform (make-hash-table :size 1000)
+   (id-cache :initform (make-hash-table :size 1000)
              :accessor id-cache)
    (version :initarg :version
             :initform 0
-            :accessor version)))
+            :accessor version))
+   (key-comparer :initform nil
+                 :accessor key-comparer))
 
 (defclass storable-versioned-class (storable-class)
   ())
@@ -115,6 +116,27 @@
 	       (slot-definition-initform slot-definition)))
        slot-definitions))
 
+(defun key-slots (class)
+  (remove-if-not #'key (class-slots class)))
+
+(defun make-key-comparer (class)
+  (let ((slots (key-slots class)))
+    (and
+     slots
+     (compile
+      nil
+      `(lambda (x y)
+         (let ((class (class-of x)))
+           (and
+            (eq class (class-of y))
+            ,@(loop for slot in slots
+                    for location = (slot-definition-location slot)
+                    append
+                    `((slot-boundp-using-class class x ,slot)
+                      (slot-boundp-using-class class y ,slot)
+                      (equal (standard-instance-access x ,location)
+                             (standard-instance-access y ,location)))))))))))
+
 (defun initialize-class-slots (class slots)
   (let* ((slots-to-store (coerce (remove-if-not #'store-slot-p slots)
                                  'simple-vector)))
@@ -126,12 +148,11 @@
           (make-slots-cache slots))
     (setf (class-initforms class)
           (map 'vector #'slot-definition-initform slots))
-    (incf (version class))))
+    (incf (version class))
+    (setf (key-comparer class) (make-key-comparer class))))
 
-(defmethod compute-slots :around ((class storable-class))
-  (let ((slots (call-next-method)))
-    (initialize-class-slots class slots)
-    slots))
+(defmethod finalize-inheritance :after ((class storable-class))
+  (initialize-class-slots class (class-slots class)))
 
 ;;;
 

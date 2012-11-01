@@ -727,7 +727,7 @@
                 (class-id (write-object class stream)))
            (write-n-bytes #.(type-code 'storable-link) 1 stream)
            (write-n-bytes class-id +class-id-length+ stream)
-           (write-n-bytes (id object) +id-length+ stream)))
+           (write-n-bytes (assign-id object) +id-length+ stream)))
         ((typep object 'storable-versioned-object)
          (write-storable-versioned-object object stream))
         (t
@@ -782,6 +782,13 @@
       (funcall before stream))
     (write-n-bytes class-id +class-id-length+ stream)
     (write-n-bytes id +id-length+ stream)
+    (when *export*
+      (write-object (if (or (eq (collection object)
+                                *collection*)
+                            (not (top-level object)))
+                        nil
+                        (name (collection object)))
+                    stream))
     (set-written object)
     (loop for id below (length slots)
           for (location . initform) = (aref slots id)
@@ -877,14 +884,24 @@
       ;; To work with the old db files, this supports versioning as well
       (let ((copy (when existing
                     (prog1 (copy-object object)
-                      (clear-previous-version object)))))
+                      (clear-previous-version object))))
+            (collection-name (and *import*
+                                  (read-next-object stream)))
+            (*collection* (if collection-name
+                              (find-collection *db* collection-name)
+                              *collection*)))
         (assign-read-id object id)
         (read-slots object slots stream)
         (cond ((and copy
                     (typep object 'storable-versioned-object))
                (supersede object copy :set-time t))
-              ((and (not *do-not-push-into-collection*)
-                    (top-level object))
+              ((or (not (top-level object))
+                   *do-not-push-into-collection*))
+              ((and *import*
+                    (let ((existing (find-existing-doc object *collection*)))
+                      (and existing
+                           (setf object existing)))))
+              (t
                (setf (collection object) *collection*)
                (vector-push-extend object (docs *collection*)))))
       object)))
@@ -1003,14 +1020,13 @@
 
 (defreader collection (stream)
   (if *import*
-      (add-collection *db*
+      (find-collection *db*
                       (read-next-object stream))
       *collection*))
 
 ;;; delete
 
 (defun write-delete-marker (object stream)
-  (break)
   (when (id object)
     (let* ((class (class-of object))
            (class-id (write-object class stream)))
@@ -1132,11 +1148,12 @@
         (*indexes* (make-hash-table :size 1000))
         (*object-cache* (make-hash-table :size 1000
                                          :test #'eq))
-        (*import* t))
+        (*import* t)
+        (*db* db))
     (with-io-file (stream file)
       (loop until (stream-end-of-file-p stream)
-            for *collection* = (add-collection db
-                                               (read-next-object stream))
+            for *collection* = (find-collection db
+                                                (read-next-object stream))
             do
             (loop for code = (read-n-bytes 1 stream)
                   until (= code +end+)

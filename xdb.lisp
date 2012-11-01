@@ -176,9 +176,14 @@ sort-collection, sort-collection-temporary and union-collection. "))
     (initialize-doc-container collection)
     collection))
 
+(defun find-collection (db name &optional (errorp t))
+  (or (gethash name (collections db))
+      (and errorp
+           (error "Collection ~s not found." name))))
+
 (defmethod add-collection ((db xdb) name
                            &key (collection-class 'collection) load-from-file-p)
-  (let ((collection (or (gethash name (collections db))
+  (let ((collection (or (find-collection db name nil)
                         (setf (gethash name (collections db))
                               (make-new-collection name db
                                                    :collection-class collection-class)))))
@@ -416,3 +421,11 @@ of sorted docs."))
                 doc)
     (get-val doc 'value)))
 
+;;;
+
+(defun find-existing-doc (doc collection)
+  (let ((comparer (key-comparer (class-of doc))))
+    (when comparer
+      (loop for existing across (docs collection)
+            when (funcall comparer doc existing)
+            return existing))))
