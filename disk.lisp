@@ -812,9 +812,9 @@
 
 (defun write-delete-marker (object stream)
   (when (written object)
-    (write-n-bytes #.(type-code 'delete-marker) 1 stream)
     (let* ((class (class-of object))
            (class-id (write-object class stream)))
+      (write-n-bytes #.(type-code 'delete-marker) 1 stream)
       (write-n-bytes class-id +class-id-length+ stream)
       (write-n-bytes (id object) +id-length+ stream))))
 
