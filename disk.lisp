@@ -21,7 +21,10 @@
                  :accessor object-cache)
    (id-cache :initarg :id-cache
              :initform (make-hash-table :size 1000)
-             :accessor id-cache)))
+             :accessor id-cache)
+   (loaded :initarg :loaded
+           :initform nil
+           :accessor loaded)))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *codes*
@@ -218,11 +221,15 @@
 (defreader symbol (stream)
   (let* ((package-id (read-n-bytes +sequence-length+ stream))
          (symbol-id (read-n-bytes +sequence-length+ stream))
-         (package (or (aref *packages* package-id)
-                      (error "Package with id ~a not found" package-id)))
-         (symbol (aref (cdr package) symbol-id)))
+         (package (or
+                   (and
+                    (array-in-bounds-p *packages* package-id)
+                    (aref *packages* package-id))
+                   (error "Package with id ~a not found" package-id)))
+         (symbol (and (array-in-bounds-p (cdr package) symbol-id)
+                      (aref (cdr package) symbol-id))))
     (or symbol
-        (error "Symbol with id ~a in package ~a not found"
+        (error "Symbol with id ~a in package ~a not found."
                symbol-id (car package)))))
 
 (defreader intern-package-and-symbol (stream)
@@ -865,8 +872,11 @@
                  (call-reader code stream))))))))
 
 (defun load-data (collection file add-function delete-function)
+  (when (loaded collection)
+    (error "Collection ~a cannot be loaded twice." collection))
   (with-collection collection
-    (read-file file add-function delete-function)))
+    (read-file file add-function delete-function))
+  (setf (loaded collection) t))
 
 (defun save-data (collection &optional file)
   (let ((*written-objects* (make-hash-table :test 'eq)))
