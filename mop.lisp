@@ -13,9 +13,6 @@
    (slot-locations-and-initforms
     :initform nil
     :accessor slot-locations-and-initforms)
-   (slot-locations-read
-    :initform nil
-    :accessor slot-locations-read)
    (all-slot-locations-and-initforms
     :initform nil
     :accessor all-slot-locations-and-initforms)
@@ -96,16 +93,6 @@
 	       (slot-definition-initform slot-definition)))
        slot-definitions))
 
-(defun class-changed-after-read (class)
-  (with-slots (slot-locations-read
-               slot-locations-and-initforms) class
-    (or (null slot-locations-read)
-        (/= (length slot-locations-read)
-            (length slot-locations-and-initforms))
-        (loop for read across slot-locations-read
-              for (actual) across slot-locations-and-initforms
-              thereis (not (eql read actual))))))
-
 (defun initialize-class-slots (class slots)
   (let* ((slots-to-store (coerce (remove-if-not #'store-slot-p slots)
                                  'simple-vector)))
@@ -116,8 +103,7 @@
     (setf (all-slot-locations-and-initforms class)
           (make-slots-cache slots))
     (setf (class-initforms class)
-          (map 'vector #'slot-definition-initform slots))
-    (setf (written class) (not (class-changed-after-read class)))))
+          (map 'vector #'slot-definition-initform slots))))
 
 (defmethod compute-slots :around ((class storable-class))
   (let ((slots (call-next-method)))

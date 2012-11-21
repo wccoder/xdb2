@@ -550,6 +550,12 @@
 
 ;;; storable-class
 
+(defstruct proxy
+  class
+  written
+  slot-locations
+  id)
+
 (defun cache-class (class id)
   (when (<= (length *classes*) id)
     (adjust-array *classes* (1+ id)))
@@ -557,30 +563,64 @@
     (setf (fill-pointer *classes*) (1+ id)))
   (setf (aref *classes* id) class))
 
+(defun make-class-proxy (proxy class &key id)
+  (let ((new-id (if proxy
+                    (proxy-id proxy)
+                    (length *classes*)))
+        (slot-locations (unless id
+                          (map 'vector #'car
+                               (slot-locations-and-initforms class)))))
+    (cond (proxy
+           (setf (proxy-written proxy) t
+                 (proxy-slot-locations proxy)
+                 slot-locations))
+          (t
+           (setf proxy (make-proxy :class class
+                                   :id new-id
+                                   :slot-locations slot-locations
+                                   :written t))
+           (if id
+               (cache-class proxy id)
+               (vector-push-extend proxy *classes*))))
+    proxy))
+
 (defmethod write-object ((class storable-class) stream)
-  (cond ((and (written class)
-              (position class *classes* :test #'eq)))
-        (t
-         (unless (class-finalized-p class)
-           (finalize-inheritance class))
-         (let ((id (vector-push-extend class *classes*))
-               (slots (slots-to-store class)))
-           (write-n-bytes #.(type-code 'storable-class) 1 stream)
-           (write-object (class-name class) stream)
-           (write-n-bytes id +class-id-length+ stream)
-           (write-n-bytes (length slots) +sequence-length+ stream)
-           (loop for slot across slots
-                 do (write-object (slot-definition-name slot)
-                                  stream))
-           (setf (written class) t
-                 (slot-locations-read class)
-                 (map 'vector #'car (slot-locations-and-initforms  class)))
-           id))))
+  (let ((proxy (find class *classes* :test #'eq
+                                     :key (lambda (x)
+                                            (and (typep x 'proxy)
+                                                 (proxy-class x))))))
+    (cond ((and proxy
+                (proxy-written proxy)
+                (written class))
+           (proxy-id proxy))
+          (t
+           (unless (class-finalized-p class)
+             (finalize-inheritance class))
+           (let ((slots (slots-to-store class))
+                 (proxy (make-class-proxy proxy class)))
+             (write-n-bytes #.(type-code 'storable-class) 1 stream)
+             (write-object (class-name class) stream)
+             (write-n-bytes (proxy-id proxy) +class-id-length+ stream)
+             (write-n-bytes (length slots) +sequence-length+ stream)
+             (loop for slot across slots
+                   do (write-object (slot-definition-name slot)
+                                    stream))
+             (proxy-id proxy))))))
+
+(defun class-changed-after-read (proxy class)
+  (let ((slot-locations-read (proxy-slot-locations proxy))
+        (slot-locations-and-initforms (slot-locations-and-initforms class)))
+    (or (null slot-locations-read)
+        (/= (length slot-locations-read)
+            (length slot-locations-and-initforms))
+        (loop for read across slot-locations-read
+              for (actual) across slot-locations-and-initforms
+              thereis (not (eql read actual))))))
 
 (defreader storable-class (stream)
-  (let ((class (find-class (read-next-object stream))))
-    (cache-class class
-                 (read-n-bytes +class-id-length+ stream))
+  (let* ((class (find-class (read-next-object stream)))
+         (proxy (make-class-proxy nil class
+                                  :id (read-n-bytes +class-id-length+ stream))))
     (unless (class-finalized-p class)
       (finalize-inheritance class))
     (let* ((length (read-n-bytes +sequence-length+ stream))
@@ -590,8 +630,9 @@
             (slot-effective-definition class (read-next-object stream))
             when slot-d
             do (setf (aref vector i) (slot-definition-location slot-d)))
-      (setf (slot-locations-read class) vector)
-      (setf (written class) (not (class-changed-after-read class))))
+      (setf (proxy-slot-locations proxy) vector)
+      (setf (proxy-written proxy)
+            (not (class-changed-after-read proxy class))))
     (read-next-object stream)))
 
 ;;; storable-object
@@ -635,7 +676,10 @@
 
 (declaim (inline get-instance))
 (defun get-instance (class-id id)
-  (let* ((class (get-class class-id))
+  (let* ((proxy (get-class class-id))
+         (class (if (typep proxy 'proxy)
+                    (proxy-class proxy)
+                    proxy))
          (index (if (typep class 'storable-class)
                     (id-cache class)
                     *indexes*)))
@@ -684,7 +728,8 @@
          (id (read-n-bytes +id-length+ stream))
          (instance (get-instance class-id id))
          (class (class-of instance))
-         (slots (slot-locations-read class))
+         (proxy (get-class class-id))
+         (slots (proxy-slot-locations proxy))
          (function *storable-object-hook*)
          copy)
     (declare (simple-vector slots))
