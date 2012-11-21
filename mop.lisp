@@ -23,9 +23,9 @@
    (id-cache :initarg :id-cache
              :initform (make-hash-table :size 1000)
              :accessor id-cache)
-   (written :initarg :written
-            :initform nil
-            :accessor written)))
+   (version :initarg :version
+            :initform 0
+            :accessor version)))
 
 (defun initialize-storable-class (next-method class &rest args
                                   &key direct-superclasses &allow-other-keys)
@@ -103,7 +103,8 @@
     (setf (all-slot-locations-and-initforms class)
           (make-slots-cache slots))
     (setf (class-initforms class)
-          (map 'vector #'slot-definition-initform slots))))
+          (map 'vector #'slot-definition-initform slots))
+    (incf (version class))))
 
 (defmethod compute-slots :around ((class storable-class))
   (let ((slots (call-next-method)))

@@ -552,9 +552,9 @@
 
 (defstruct proxy
   class
-  written
   slot-locations
-  id)
+  id
+  version)
 
 (defun cache-class (class id)
   (when (<= (length *classes*) id)
@@ -564,6 +564,8 @@
   (setf (aref *classes* id) class))
 
 (defun make-class-proxy (proxy class &key id)
+  (unless (class-finalized-p class)
+    (finalize-inheritance class))
   (let ((new-id (if proxy
                     (proxy-id proxy)
                     (length *classes*)))
@@ -571,14 +573,13 @@
                           (map 'vector #'car
                                (slot-locations-and-initforms class)))))
     (cond (proxy
-           (setf (proxy-written proxy) t
-                 (proxy-slot-locations proxy)
-                 slot-locations))
+           (setf (proxy-slot-locations proxy) slot-locations
+                 (proxy-version proxy) (version class)))
           (t
            (setf proxy (make-proxy :class class
-                                   :id new-id
+                                   :id (or id new-id)
                                    :slot-locations slot-locations
-                                   :written t))
+                                   :version (version class)))
            (if id
                (cache-class proxy id)
                (vector-push-extend proxy *classes*))))
@@ -590,14 +591,12 @@
                                             (and (typep x 'proxy)
                                                  (proxy-class x))))))
     (cond ((and proxy
-                (proxy-written proxy)
-                (written class))
+                (= (version class)
+                   (proxy-version proxy)))
            (proxy-id proxy))
           (t
-           (unless (class-finalized-p class)
-             (finalize-inheritance class))
-           (let ((slots (slots-to-store class))
-                 (proxy (make-class-proxy proxy class)))
+           (let ((proxy (make-class-proxy proxy class))
+                 (slots (slots-to-store class)))
              (write-n-bytes #.(type-code 'storable-class) 1 stream)
              (write-object (class-name class) stream)
              (write-n-bytes (proxy-id proxy) +class-id-length+ stream)
@@ -621,8 +620,6 @@
   (let* ((class (find-class (read-next-object stream)))
          (proxy (make-class-proxy nil class
                                   :id (read-n-bytes +class-id-length+ stream))))
-    (unless (class-finalized-p class)
-      (finalize-inheritance class))
     (let* ((length (read-n-bytes +sequence-length+ stream))
            (vector (make-array length :initial-element nil)))
       (loop for i below length
@@ -631,8 +628,8 @@
             when slot-d
             do (setf (aref vector i) (slot-definition-location slot-d)))
       (setf (proxy-slot-locations proxy) vector)
-      (setf (proxy-written proxy)
-            (not (class-changed-after-read proxy class))))
+      (when (class-changed-after-read proxy class)
+        (setf (proxy-version proxy) 0)))
     (read-next-object stream)))
 
 ;;; storable-object
