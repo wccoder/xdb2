@@ -571,7 +571,14 @@
                     (length *classes*)))
         (slot-locations (unless id
                           (map 'vector #'car
-                               (slot-locations-and-initforms class)))))
+                               (slot-locations-and-initforms class))))
+        (proxy (cond (id
+                      (let ((intended (find-class-proxy class)))
+                        (when (and intended
+                                   (/= (proxy-id intended) id))
+                          (cache-class intended id))
+                        intended))
+                     (proxy))))
     (cond (proxy
            (setf (proxy-slot-locations proxy) slot-locations
                  (proxy-version proxy) (version class)))
@@ -585,11 +592,14 @@
                (vector-push-extend proxy *classes*))))
     proxy))
 
+(defun find-class-proxy (class)
+  (find class *classes* :test #'eq
+                        :key (lambda (x)
+                               (and (typep x 'proxy)
+                                    (proxy-class x)))))
+
 (defmethod write-object ((class storable-class) stream)
-  (let ((proxy (find class *classes* :test #'eq
-                                     :key (lambda (x)
-                                            (and (typep x 'proxy)
-                                                 (proxy-class x))))))
+  (let ((proxy (find-class-proxy class)))
     (cond ((and proxy
                 (= (version class)
                    (proxy-version proxy)))

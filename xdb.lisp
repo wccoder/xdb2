@@ -199,6 +199,9 @@ sort-collection, sort-collection-temporary and union-collection. "))
                                      :type "log")))
     collection))
 
+(defun remove-collection (db name)
+  (remhash name (collections db)))
+
 (defgeneric snapshot (collection)
   (:documentation "Write out a snapshot."))
 
