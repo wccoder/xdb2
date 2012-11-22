@@ -24,7 +24,9 @@
              :accessor id-cache)
    (loaded :initarg :loaded
            :initform nil
-           :accessor loaded)))
+           :accessor loaded)
+   (lock :initform (bt:make-lock)
+         :accessor lock)))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *codes*
@@ -156,7 +158,7 @@
   (cond ((typep object 'storable-object)
          (write-objects-inside-slots object stream)
          (write-storable-object object stream))
-        (t 
+        (t
          (write-object object stream))))
 
 (declaim (inline read-next-object))
@@ -923,34 +925,44 @@
                 (t
                  (call-reader code stream))))))))
 
+;;;
+
+(defmacro with-collection-lock (collection &body body)
+  `(bt:with-lock-held ((lock ,collection))
+     ,@body))
+
 (defun load-data (collection file add-function delete-function)
-  (when (loaded collection)
-    (error "Collection ~a cannot be loaded twice." collection))
-  (with-collection collection
-    (read-file file add-function delete-function))
-  (setf (loaded collection) t))
+  (with-collection-lock collection
+    (when (loaded collection)
+      (error "Collection ~a cannot be loaded twice." collection))
+    (with-collection collection
+      (read-file file add-function delete-function))
+    (setf (loaded collection) t)))
 
 (defun save-data (collection &optional file)
-  (let ((*written-objects* (make-hash-table :test 'eq)))
-    (clear-cache collection)
-    (with-collection collection
-      (with-io-file (stream file
-                     :direction :output)
-        (dump-data stream)))
-    (clear-cache collection)
-    (values)))
+  (with-collection-lock collection
+    (let ((*written-objects* (make-hash-table :test 'eq)))
+      (clear-cache collection)
+      (with-collection collection
+        (with-io-file (stream file
+                       :direction :output)
+          (dump-data stream)))
+      (clear-cache collection)
+      (values))))
 
 (defun save-doc (collection document &optional file)
-  (let ((*written-objects* (make-hash-table :test 'eq)))
+  (with-collection-lock collection
+    (let ((*written-objects* (make-hash-table :test 'eq)))
+      (with-collection collection
+        (with-io-file (stream file
+                       :direction :output
+                       :append t)
+          (write-top-level-object document stream))))))
+
+(defun %delete-doc (collection document &optional file)
+  (with-collection-lock collection
     (with-collection collection
       (with-io-file (stream file
                      :direction :output
                      :append t)
-        (write-top-level-object document stream)))))
-
-(defun %delete-doc (collection document &optional file)
-  (with-collection collection
-    (with-io-file (stream file
-                   :direction :output
-                   :append t)
-      (write-delete-marker document stream))))
+        (write-delete-marker document stream)))))

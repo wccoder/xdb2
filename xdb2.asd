@@ -2,7 +2,8 @@
 
 (asdf:defsystem #:xdb2
   :serial t
-  :depends-on (closer-mop ieee-floats alexandria)
+  :depends-on (closer-mop ieee-floats alexandria
+                          bordeaux-threads)
   :components ((:file "package")
                #+(and sbcl (or x86 x86-64))
                (:file "io-sbcl")
@@ -13,5 +14,4 @@
                (:file "common")
                (:file "xdb")
                (:file "db-functions")
-               (:file "document")
-               ))
+               (:file "document")))
