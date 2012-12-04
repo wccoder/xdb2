@@ -82,7 +82,6 @@
            sap
            offset))
 
-(declaim (inline unix-read))
 (defun unix-read (fd buf len)
   (declare (optimize (sb-c::float-accuracy 0)
                      (space 0)))
@@ -91,10 +90,10 @@
   (sb-alien:alien-funcall
    (sb-alien:extern-alien "read"
                           (function sb-alien:int
-                                    sb-alien:int sb-alien:long sb-alien:int))
+                                    sb-alien:int sb-alien:unsigned-long
+                                    sb-alien:int))
    fd buf len))
 
-(declaim (inline unix-read))
 (defun unix-write (fd buf len)
   (declare (optimize (sb-c::float-accuracy 0)
                      (space 0)))
@@ -102,8 +101,9 @@
            (type word len))
   (sb-alien:alien-funcall
    (sb-alien:extern-alien "write"
-                          (function sb-alien:int
-                                    sb-alien:int sb-alien:long sb-alien:int))
+                          (function sb-alien:unsigned-int
+                                    sb-alien:int sb-alien:unsigned-long
+                                    sb-alien:int))
    fd buf len))
 
 (defun fill-buffer (stream offset)
