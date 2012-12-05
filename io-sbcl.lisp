@@ -50,14 +50,14 @@
 (defun close-input-stream (stream)
   (sb-alien:alien-funcall
    (sb-alien:extern-alien "free"
-                          (function (values) sb-alien:long))
+                          (function (values) sb-alien:unsigned-long))
    (input-stream-buffer-start stream)))
 
 (defun close-output-stream (stream)
   (flush-buffer stream)
   (sb-alien:alien-funcall
    (sb-alien:extern-alien "free"
-                          (function (values) sb-alien:long))
+                          (function (values) sb-alien:unsigned-long))
    (output-stream-buffer-start stream)))
 
 (declaim (inline stream-end-of-file-p))
