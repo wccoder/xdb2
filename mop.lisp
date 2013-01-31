@@ -48,7 +48,7 @@
 (defmethod validate-superclass
     ((class standard-class)
      (superclass storable-class))
-  t)
+  nil)
 
 (defmethod validate-superclass
     ((class storable-class)
@@ -82,8 +82,9 @@
   (declare (ignore slot-name))
   (let ((effective-definition (call-next-method))
         (direct-definition (car direct-definitions)))
-    (setf (store-slot-p effective-definition)
-          (store-slot-p direct-definition))
+    (when (typep direct-definition 'storable-direct-slot-definition)
+      (setf (store-slot-p effective-definition)
+            (store-slot-p direct-definition)))
     effective-definition))
 
 (defun make-slots-cache (slot-definitions)

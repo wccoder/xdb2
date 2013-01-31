@@ -934,7 +934,7 @@
 (defun load-data (collection file add-function delete-function)
   (with-collection-lock collection
     (when (loaded collection)
-      (error "Collection ~a cannot be loaded twice." collection))
+      (warn "Collection ~a cannot be loaded twice." collection))
     (with-collection collection
       (read-file file add-function delete-function))
     (setf (loaded collection) t)))
