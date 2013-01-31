@@ -4,6 +4,7 @@
 
 (defclass collection ()
   ((name :initarg :name
+         :initform nil
          :accessor name)
    (path :initarg :path
          :accessor path)
@@ -27,6 +28,10 @@
            :accessor loaded)
    (lock :initform (bt:make-lock)
          :accessor lock)))
+
+(defmethod print-object ((object collection) stream)
+  (print-unreadable-object (object stream :type t :identity t)
+    (princ (name object) stream)))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *codes*
@@ -732,6 +737,12 @@
   (if (>= id (last-id class))
       (setf (last-id class) (1+ id))))
 
+(defun clear-previous-version (object)
+  (loop for (location . initform) across
+        (slot-locations-and-initforms (class-of object))
+        do (setf (standard-instance-access object location)
+                 initform)))
+
 (defreader storable-object (stream)
   (let* ((class-id (read-n-bytes +class-id-length+ stream))
          (id (read-n-bytes +id-length+ stream))
@@ -743,7 +754,8 @@
          copy)
     (declare (simple-vector slots))
     (cond ((and function (id instance))
-           (setf copy (copy-object instance)))
+           (setf copy (copy-object instance))
+           (clear-previous-version instance))
           (t
            (set-id class instance id)
            (setf (written instance) t)))
