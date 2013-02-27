@@ -24,9 +24,9 @@
              :accessor id-cache)
    (version :initarg :version
             :initform 0
-            :accessor version))
+            :accessor version)
    (key-comparer :initform nil
-                 :accessor key-comparer))
+                 :accessor key-comparer)))
 
 (defclass storable-versioned-class (storable-class)
   ())
@@ -187,7 +187,7 @@
                    :accessor effective-date))
   (:metaclass storable-versioned-class))
 
-(defmethod version ((object storable-versioned-class))
+(defmethod version ((object storable-versioned-object))
   (1+ (length (old-versions object))))
 
 (defvar *inhibit-change-marking* nil)

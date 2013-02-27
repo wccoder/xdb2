@@ -752,7 +752,8 @@
                 (setf (gethash id index)
                       (fast-allocate-instance class)))
             id
-            (and existing t))))
+            (and existing t)
+            class-id)))
 
 (defun read-instance (stream)
   (get-instance (read-n-bytes +class-id-length+ stream)
@@ -876,27 +877,23 @@
 (defvar *do-not-push-into-collection* nil)
 
 (defreader storable-object (stream)
-  (let ((class-id (read-n-bytes +class-id-length+ stream))
-        (id (read-n-bytes +id-length+ stream))
-        (class (class-of instance))
-        (proxy (get-class class-id))
-        (slots (proxy-slot-locations proxy))
-        (*inhibit-change-marking* t))
-    (multiple-value-bind (object id existing) (read-instance stream)
-      ;; To work with the old db files, this supports versioning as well
-      (let ((copy (when existing
-                    (prog1 (copy-object object)
-                      (clear-previous-version object))))
-            (collection-name (and *import*
-                                  (read-next-object stream)))
-            (*collection* (if collection-name
-                              (find-collection *db* collection-name)
-                              *collection*)))
-        (assign-read-id object id)
-        (read-slots object slots stream)
-        (when *import*
-          (setf (written object) nil))
-        (cond ((and copy
+  (multiple-value-bind (object id existing class-id) (read-instance stream)
+    ;; To work with the old db files, this supports versioning as well
+    (let* ((proxy (get-class class-id))
+           (slots (proxy-slot-locations proxy))
+           (*inhibit-change-marking* t)(copy (when existing
+                                               (prog1 (copy-object object)
+                                                 (clear-previous-version object))))
+           (collection-name (and *import*
+                                 (read-next-object stream)))
+           (*collection* (if collection-name
+                             (find-collection *db* collection-name)
+                             *collection*)))
+      (assign-read-id object id)
+      (read-slots object slots stream)
+      (when *import*
+        (setf (written object) nil))
+      (cond ((and copy
                   (typep object 'storable-versioned-object))
              (supersede object copy :set-time t))
             ((or (not (top-level object))
@@ -911,7 +908,7 @@
              (when *import*
                (serialize-doc *collection*
                               object)))))
-      object)))
+    object))
 
 (defreader storable-versioned-object (stream)
   (let ((old-versions
