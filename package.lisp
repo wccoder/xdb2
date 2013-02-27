@@ -57,4 +57,5 @@
    :effective-date
    :version
    :supersede
-   :*inhibit-change-marking*))
+   :*inhibit-change-marking*
+   :compare-docs))
