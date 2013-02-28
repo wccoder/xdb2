@@ -835,23 +835,6 @@
         do (setf (standard-instance-access object location)
                  initform)))
 
-(defreader storable-object (stream)
-  (let* ((class-id (read-n-bytes +class-id-length+ stream))
-         (id (read-n-bytes +id-length+ stream))
-         (instance (get-instance class-id id))
-         (class (class-of instance))
-         (proxy (get-class class-id))
-         (slots (proxy-slot-locations proxy))
-         (function *storable-object-hook*)
-         copy)
-    (declare (simple-vector slots))
-    (cond ((and function (id instance))
-           (setf copy (copy-object instance))
-           (clear-previous-version instance))
-          (t
-           (set-id class instance id)
-           (setf (written instance) t)))))
-
 (defun read-slots (object slots stream)
   (declare (simple-vector slots))
   (loop for slot-id = (read-n-bytes 1 stream)
@@ -881,9 +864,10 @@
     ;; To work with the old db files, this supports versioning as well
     (let* ((proxy (get-class class-id))
            (slots (proxy-slot-locations proxy))
-           (*inhibit-change-marking* t)(copy (when existing
-                                               (prog1 (copy-object object)
-                                                 (clear-previous-version object))))
+           (*inhibit-change-marking* t)
+           (copy (when existing
+                   (prog1 (copy-object object)
+                     (clear-previous-version object))))
            (collection-name (and *import*
                                  (read-next-object stream)))
            (*collection* (if collection-name
