@@ -752,7 +752,10 @@
                 (setf (gethash id index)
                       (fast-allocate-instance class)))
             id
-            (and existing t)
+            (and existing
+                 (typep existing 'storable-object)
+                 (id existing)
+                 t)
             class-id)))
 
 (defun read-instance (stream)
@@ -877,6 +880,7 @@
       (read-slots object slots stream)
       (when *import*
         (setf (written object) nil))
+      (setf (collection object) *collection*)
       (cond ((and copy
                   (typep object 'storable-versioned-object))
              (supersede object copy :set-time t))
@@ -887,7 +891,6 @@
                     (and existing
                          (setf object existing)))))
             (t
-             (setf (collection object) *collection*)
              (vector-push-extend object (docs *collection*))
              (when *import*
                (serialize-doc *collection*
@@ -1056,18 +1059,6 @@
 (defmacro with-collection-lock (collection &body body)
   `(bt:with-lock-held ((lock ,collection))
      ,@body))
-
-
-(defun save-data (collection &optional file)
-  (with-collection-lock collection
-    (let ((*written-objects* (make-hash-table :test 'eq)))
-      (clear-cache collection)
-      (with-collection collection
-        (with-io-file (stream file
-                       :direction :output)
-          (dump-data stream)))
-      (clear-cache collection)
-      (values))))
 
 (defun load-data (collection file)
   (with-collection-lock collection
