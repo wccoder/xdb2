@@ -783,6 +783,7 @@
          (id (assign-id object)))
     (declare (simple-vector slots)
              (fixnum type-code))
+    (setf (collection object) *collection*)
     (write-n-bytes type-code 1 stream)
     (when before
       (funcall before stream))
@@ -883,7 +884,12 @@
       (setf (collection object) *collection*)
       (cond ((and copy
                   (typep object 'storable-versioned-object))
-             (supersede object copy :set-time t))
+             (supersede object copy :set-time t)
+             (unless (eq (collection object)
+                         (collection copy))
+               (warn "Collection mismatch for ~a: was ~a, became ~a"
+                     object
+                     (collection copy) (collection object))))
             ((or (not (top-level object))
                  *do-not-push-into-collection*))
             ((and *import*
