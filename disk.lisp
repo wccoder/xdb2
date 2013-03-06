@@ -887,9 +887,10 @@
              (supersede object copy :set-time t)
              (unless (eq (collection object)
                          (collection copy))
-               (warn "Collection mismatch for ~a: was ~a, became ~a"
+               (warn "Collection mismatch for ~a: ~a => ~a"
                      object
-                     (collection copy) (collection object))))
+                     (and (collection copy) (name (collection copy)))
+                     (and (collection object) (name (collection object))))))
             ((or (not (top-level object))
                  *do-not-push-into-collection*))
             ((and *import*
