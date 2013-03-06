@@ -161,7 +161,8 @@
             (*packages* (packages ,collection-sym))
             (*classes* (classes ,collection-sym))
             (*indexes* (id-cache ,collection-sym))
-            (*object-cache* (object-cache ,collection-sym)))
+            (*object-cache* (object-cache ,collection-sym))
+            (*inhibit-change-marking* t))
        ,@body)))
 
 (defun is-written (object)
@@ -813,8 +814,7 @@
                                 object stream))
 
 (defun write-storable-versioned-object (object stream)
-  (let ((*inhibit-change-marking* t)
-        (previous (car (old-versions object))))
+  (let ((previous (car (old-versions object))))
     (when (and previous
                (not (effective-date previous)))
       (setf (effective-date previous)
@@ -868,7 +868,6 @@
     ;; To work with the old db files, this supports versioning as well
     (let* ((proxy (get-class class-id))
            (slots (proxy-slot-locations proxy))
-           (*inhibit-change-marking* t)
            (copy (when existing
                    (prog1 (copy-object object)
                      (clear-previous-version object))))
@@ -1107,7 +1106,8 @@
 ;;; Export/import
 
 (defun export-db (db file test)
-  (let ((*written-objects* (make-hash-table :test 'eq))
+  (let ((*inhibit-change-marking* t)
+        (*written-objects* (make-hash-table :test 'eq))
         (*packages* (make-s-packages))
         (*classes* (make-class-cache))
         (*indexes* (make-hash-table :size 1000))
@@ -1128,7 +1128,8 @@
     (values)))
 
 (defun import-db (db file)
-  (let ((*written-objects* (make-hash-table :test 'eq))
+  (let ((*inhibit-change-marking* t)
+        (*written-objects* (make-hash-table :test 'eq))
         (*packages* (make-s-packages))
         (*classes* (make-class-cache))
         (*indexes* (make-hash-table :size 1000))

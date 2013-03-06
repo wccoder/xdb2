@@ -15,3 +15,7 @@
                (:file "xdb")
                (:file "db-functions")
                (:file "document")))
+
+(defmethod perform ((o test-op) (c (eql (find-system :xdb2))))
+  (operate 'load-op :xdb2)
+  (funcall (intern (symbol-name :do-tests) (find-package :rt))))

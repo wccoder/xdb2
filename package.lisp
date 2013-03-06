@@ -58,4 +58,7 @@
    :version
    :supersede
    :*inhibit-change-marking*
-   :compare-docs))
+   :compare-docs
+   :persist
+   :doc-collection
+   :remove-doc))

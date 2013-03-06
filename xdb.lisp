@@ -438,3 +438,43 @@ of sorted docs."))
              (funcall (or (key-comparer (class-of doc1))
                           (constantly nil))
                       doc1 doc2)))))
+;;;
+
+(defgeneric doc-collection (doc))
+(defgeneric persist (doc &key))
+(defgeneric remove-doc (doc))
+
+(defmethod remove-doc ((object storable-object))
+  (let ((collection (doc-collection object)))
+    (setf (docs collection)
+          (delete object
+                  (alexandria:copy-array (docs collection))))
+    (delete-doc collection object)))
+
+(defmethod persist ((doc storable-versioned-object) &key (set-time t)
+                                                         (top-level t))
+  (let ((collection (doc-collection doc)))    
+    (unless (id doc) 
+      (setf (top-level doc) top-level)
+      (when top-level
+        (vector-push-extend doc (docs collection))))
+    (setf (collection doc) collection)
+    (when set-time
+      (setf (stamp-date doc) (get-universal-time)))
+    (when (old-versions doc)
+      (setf (effective-date (car (old-versions doc)))
+            (stamp-date doc)))
+    (serialize-doc collection doc))
+  doc)
+
+;;;
+
+(defmethod persist ((doc storable-object) &key (top-level t))
+  (let ((collection (doc-collection doc)))    
+    (unless (id doc) 
+      (setf (top-level doc) top-level)
+      (when top-level
+        (vector-push-extend doc (docs collection))))
+    (setf (collection doc) collection)
+    (serialize-doc collection doc))
+  doc)
