@@ -22,7 +22,7 @@
 (defmethod get-db ((dbs dbs) name)
   (gethash name (databases dbs)))
 
-(defgeneric add-db (dbs name &key base-path load-from-file-p)
+(defgeneric add-db (dbs name &key base-path)
   (:documentation "Adds a xdb to the dbs hashtable. A base-path can be
 supplied here that is independatn of the dbs base-path so that a
 database collection can be build that spans multiple disks etc."))
@@ -36,23 +36,15 @@ database collection can be build that spans multiple disks etc."))
                           (string path
                            (list path))))))
 
-(defmethod add-db ((dbs dbs) name &key base-path load-from-file-p)
+(defmethod add-db ((dbs dbs) name &key base-path)
   (unless (gethash name (databases dbs))
     (let* ((base-path (or base-path (base-path dbs)))
            (db-path (merge-pathnames (parse-db-path name) base-path))
            (db (make-instance 'xdb :location db-path)))
       (ensure-directories-exist db-path)
-      (setf (gethash name (databases dbs)) db)
-      (if load-from-file-p
-          (load-db db :load-from-file-p load-from-file-p)))))
+      (setf (gethash name (databases dbs)) db))))
 
 (defparameter *dbs* nil)
-
-(defun dbs ()
-  *dbs*)
-
-
-
 
 (defgeneric initialize-doc-container (collection)
   (:documentation
@@ -165,7 +157,7 @@ sort-collection, sort-collection-temporary and union-collection. "))
 (defmethod get-collection ((db xdb) name)
   (gethash name (collections db)))
 
-(defgeneric add-collection (xdb name &key load-from-file-p)
+(defgeneric add-collection (xdb name &key)
   (:documentation "Adds a collection to the db."))
 
 (defun make-new-collection (name db &key collection-class)
@@ -182,19 +174,18 @@ sort-collection, sort-collection-temporary and union-collection. "))
            (error "Collection ~s not found." name))))
 
 (defmethod add-collection ((db xdb) name
-                           &key (collection-class 'collection) load-from-file-p)
+                           &key (collection-class 'collection))
   (let ((collection (or (find-collection db name nil)
                         (setf (gethash name (collections db))
                               (make-new-collection name db
                                                    :collection-class collection-class)))))
-    (when load-from-file-p
-      (ensure-directories-exist (path collection))
-      (load-from-file collection
-                      (make-pathname :defaults (path collection)
-                                     :type "snap"))
-      (load-from-file collection
-                      (make-pathname :defaults (path collection)
-                                     :type "log")))
+    (ensure-directories-exist (path collection))
+    (load-from-file collection
+                    (make-pathname :defaults (path collection)
+                                   :type "snap"))
+    (load-from-file collection
+                    (make-pathname :defaults (path collection)
+                                   :type "log"))
     collection))
 
 (defun remove-collection (db name)
@@ -236,10 +227,10 @@ sort-collection, sort-collection-temporary and union-collection. "))
              (snapshot value))
            (collections db)))
 
-(defgeneric load-db (xdb &key load-from-file-p)
+(defgeneric load-db (xdb &key)
   (:documentation "Loads all the collections in a location."))
 
-(defmethod load-db ((db xdb) &key load-from-file-p)
+(defmethod load-db ((db xdb) &key)
   (let ((unique-collections (make-hash-table :test 'equal)))
     (dolist (path (directory (format nil "~A/*.*" (location db))))
       (when (pathname-name path)
@@ -247,7 +238,7 @@ sort-collection, sort-collection-temporary and union-collection. "))
               (pathname-name path))))
     (maphash  #'(lambda (key value)
                   (declare (ignore key))
-                  (add-collection db value :load-from-file-p load-from-file-p))
+                  (add-collection db value))
               unique-collections)))
 
 (defgeneric get-docs (xdb collection-name &key return-type &allow-other-keys)
@@ -379,21 +370,17 @@ of sorted docs."))
 
 ;;Add method for validation when updating a collection.
 
-
-
 (defclass xdb-sequence ()
   ((key :initarg :key
          :accessor key)
    (value :initarg :value
           :accessor value)))
 
-
 (defgeneric enable-sequences (xdb))
 
 (defmethod enable-sequences ((xdb xdb))
   (add-collection xdb "sequences" 
-                :collection-class 'collection
-                :load-from-file-p t))
+                  :collection-class 'collection))
 
 (defgeneric next-sequence (xdb key))
 
