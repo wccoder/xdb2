@@ -133,6 +133,15 @@ sort-collection, sort-collection-temporary and union-collection. "))
     (%delete-doc collection doc path))
   doc)
 
+(defgeneric clear-old-versions (collection doc))
+
+(defmethod clear-old-versions ((collection collection) (doc storable-versioned-object))
+  (when (old-versions doc)
+    (let ((path (make-pathname :type "log" :defaults (path collection))))
+      (ensure-directories-exist path)
+      (%clear-versions collection doc path)
+      (setf (old-versions doc) nil))))
+
 (defgeneric serialize-docs (collection &key duplicate-doc-p-func)
   (:documentation "Store all the docs in the collection on file and add it to the collection."))
 

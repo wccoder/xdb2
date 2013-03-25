@@ -67,7 +67,8 @@
       pathname
       collection
       delete-marker
-      storable-versioned-object)))
+      storable-versioned-object
+      clear-version-marker)))
 
 (defvar *statistics* ())
 (defun collect-stats (code)
@@ -1034,6 +1035,21 @@
 (defreader delete-marker (stream)
   (alexandria:deletef (docs *collection*) (read-instance stream)))
 
+;;; clear version
+
+(defun write-clear-version-marker (object stream)
+  (let* ((class (class-of object))
+         (class-id (write-object class stream)))
+    (write-n-bytes #.(type-code 'clear-version-marker) 1 stream)
+    (write-n-bytes class-id +class-id-length+ stream)
+    (write-n-bytes (id object) +id-length+ stream)))
+
+(defreader clear-version-marker (stream)
+  (let* ((class-id (read-n-bytes +class-id-length+ stream))
+         (id (read-n-bytes +id-length+ stream))
+         (object (get-instance class-id id)))
+    (setf (old-versions object) nil)))
+
 ;;;
 #+sbcl (declaim (inline %fast-allocate-instance))
 
@@ -1075,7 +1091,7 @@
         (loop until (stream-end-of-file-p stream)
               do (read-next-object stream))))))
 
-(defun save-data (collection &optional file)
+(defun save-data (collection file)
   (with-collection-lock collection
     (let ((*written-objects* (make-hash-table :test 'eq)))
       (clear-cache collection)
@@ -1086,7 +1102,7 @@
       (clear-cache collection)
       (values))))
 
-(defun save-doc (collection document &optional file)
+(defun save-doc (collection document file)
   (with-collection-lock collection
     (let ((*written-objects* (make-hash-table :test 'eq)))
       (with-collection collection
@@ -1095,13 +1111,21 @@
                        :append t)
           (write-top-level-object document stream))))))
 
-(defun %delete-doc (collection document &optional file)
+(defun %delete-doc (collection document file)
   (with-collection-lock collection
     (with-collection collection
       (with-io-file (stream file
                      :direction :output
                      :append t)
         (write-delete-marker document stream)))))
+
+(defun %clear-versions (collection document file)
+  (with-collection-lock collection
+    (with-collection collection
+      (with-io-file (stream file
+                     :direction :output
+                     :append t)
+        (write-clear-version-marker document stream)))))
 
 ;;; Export/import
 

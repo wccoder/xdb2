@@ -61,4 +61,5 @@
    :compare-docs
    :persist
    :doc-collection
-   :remove-doc))
+   :remove-doc
+   :clear-old-versions))
