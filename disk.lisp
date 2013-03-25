@@ -380,6 +380,9 @@
         do (write-n-bytes (char-code char) +char-length+ stream)))
 
 (defmethod write-object ((string string) stream)
+  (when (> (length string) #.(1- (expt 2 (* 8 +sequence-length+))))
+    (error "Strings can't be longer than ~a"
+           #.(1- (expt 2 (* 8 +sequence-length+)))))
   (etypecase string
     ((not simple-string)
      (call-next-method))
@@ -476,6 +479,9 @@
 
 (defun write-simple-vector (vector stream)
   (declare (simple-vector vector))
+  (when (> (length vector) #.(1- (expt 2 (* 8 +sequence-length+))))
+    (error "Vectors can't be longer than ~a"
+           #.(1- (expt 2 (* 8 +sequence-length+)))))
   (write-n-bytes #.(type-code 'simple-vector) 1 stream)
   (write-n-bytes (length vector) +sequence-length+ stream)
   (loop for elt across vector
@@ -496,6 +502,9 @@
 
 (defmethod write-object ((array array) stream)
   (write-n-bytes #.(type-code 'array) 1 stream)
+  (when (> (array-total-size array) #.(1- (expt 2 (* 8 +sequence-length+))))
+    (error "Arrays can't be larger than ~a"
+           #.(1- (expt 2 (* 8 +sequence-length+)))))
   (write-object (array-dimensions array) stream)
   (cond ((array-has-fill-pointer-p array)
          (write-n-bytes 1 1 stream)

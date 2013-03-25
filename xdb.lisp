@@ -16,8 +16,6 @@
               :initform "/tmp/xdb2/dbs/"
               :accessor base-path)))
 
-
-
 (defgeneric get-db (dbs name)
     (:documentation "Returns the xdb by name."))
 
