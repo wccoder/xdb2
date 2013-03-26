@@ -46,7 +46,7 @@
        (docs composite-doc)))
 
 
-(defmethod get-doc ((collection document-join) value &key (element 'key) (test #'equal))
+(defmethod get-doc ((collection document-join) value &key element (test #'equal))
   (map-docs
          nil
          (lambda (doc)

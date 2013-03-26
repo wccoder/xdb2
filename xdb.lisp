@@ -133,15 +133,6 @@ sort-collection, sort-collection-temporary and union-collection. "))
     (%delete-doc collection doc path))
   doc)
 
-(defgeneric clear-old-versions (collection doc))
-
-(defmethod clear-old-versions ((collection collection) (doc storable-versioned-object))
-  (when (old-versions doc)
-    (let ((path (make-pathname :type "log" :defaults (path collection))))
-      (ensure-directories-exist path)
-      (%clear-versions collection doc path)
-      (setf (old-versions doc) nil))))
-
 (defgeneric serialize-docs (collection &key duplicate-doc-p-func)
   (:documentation "Store all the docs in the collection on file and add it to the collection."))
 
@@ -263,13 +254,13 @@ sort-collection, sort-collection-temporary and union-collection. "))
 (defgeneric get-doc (collection value  &key element test)
   (:documentation "Returns the docs that belong to a collection."))
 
-(defmethod get-doc (collection value  &key (element 'key) (test #'equal))
+(defmethod get-doc (collection value  &key element (test #'equal))
   (map-docs
-         nil
-         (lambda (doc)
-           (when (funcall test (get-val doc element) value)
-             (return-from get-doc doc)))
-         collection))
+   nil
+   (lambda (doc)
+     (when (funcall test (get-val doc element) value)
+       (return-from get-doc doc)))
+   collection))
 
 (defgeneric get-doc-complex (test element value collection  &rest more-collections)
   (:documentation "Returns the docs that belong to a collection."))
@@ -439,6 +430,7 @@ of sorted docs."))
 (defgeneric doc-collection (doc))
 (defgeneric persist (doc &key))
 (defgeneric remove-doc (doc))
+(defgeneric clear-old-versions (doc))
 
 (defmethod remove-doc ((object storable-object))
   (let ((collection (doc-collection object)))
@@ -446,6 +438,15 @@ of sorted docs."))
           (delete object
                   (alexandria:copy-array (docs collection))))
     (delete-doc collection object)))
+
+(defmethod clear-old-versions ((doc storable-versioned-object))
+  (let ((collection (collection doc)))
+    (when (old-versions doc)
+      (let ((path (make-pathname :type "log" :defaults (path collection)))
+            (*inhibit-change-marking* t))
+        (ensure-directories-exist path)
+        (%clear-versions collection doc path)
+        (setf (old-versions doc) nil)))))
 
 (defmethod persist ((doc storable-versioned-object) &key (set-time t)
                                                          (top-level t))
