@@ -1075,7 +1075,6 @@
   (setf (classes collection) (make-class-cache)
         (packages collection) (make-s-packages)))
 
-
 ;;;
 
 (defmacro with-collection-lock (collection &body body)

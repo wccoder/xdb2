@@ -34,11 +34,13 @@
 (defun initialize-storable-class (next-method class default-superclass
                                   &rest args
                                   &key direct-superclasses &allow-other-keys)
-  (apply next-method class
-         (if direct-superclasses
-             args
-             (list* :direct-superclasses (list (find-class default-superclass))
-                    args))))
+  (let ((default-superclass (find-class default-superclass)))
+    (if (some (lambda (x) (subtypep x default-superclass))
+              direct-superclasses)
+        (apply next-method class args)
+        (apply next-method class
+               :direct-superclasses (list* default-superclass direct-superclasses)
+               args))))
 
 (defmethod initialize-instance :around ((class storable-class)
                                         &rest args)
