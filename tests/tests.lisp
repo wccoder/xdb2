@@ -154,3 +154,51 @@
            (eql (y doc1) 3)))
     t)
   t)
+
+(deftest metaclass-change.write
+  (progn
+    (make-new-db)
+    (defclass test-class2 (test)
+      ((y :initarg :y
+          :initform nil
+          :accessor y)) 
+      (:metaclass storable-versioned-class))
+    (clear-class-cache 'test-class2)
+    (let ((object (make-instance 'test-class2 :y 1 :top-level t) ))
+      (persist object)
+      (incf (y object))
+      (persist object)
+      (incf (y object))
+      (persist object)
+      (assert (= (version object) 3)))
+    t)
+  t)
+
+(deftest metaclass-change.read
+  (progn
+    (setf (find-class 'test-class2) nil)
+    (defclass test-class2 (test)
+      ((y :initarg :y
+          :initform nil
+          :accessor y)) 
+      (:metaclass storable-class))
+    (load-collection)
+    (let ((object (alexandria:first-elt (docs *test-col*))))
+      (assert (not (typep object 'storable-versioned-object)))
+      (y object)))
+  3)
+
+(deftest metaclass-change.read.2
+  (progn
+    (setf (find-class 'test-class2) nil)
+    (defclass test-class2 (test)
+      ((y :initarg :y
+          :initform nil
+          :accessor y)) 
+      (:metaclass storable-versioned-class))
+    (load-collection)
+    (let ((object (alexandria:first-elt (docs *test-col*))))
+      (assert (typep object 'storable-versioned-object))
+      (assert (= (version object) 3))
+      (y object)))
+  3)

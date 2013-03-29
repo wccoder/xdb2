@@ -67,7 +67,6 @@
       pathname
       collection
       delete-marker
-      storable-versioned-object
       clear-version-marker)))
 
 (defvar *statistics* ())
@@ -777,23 +776,21 @@
          (setf (id object)
                (1- (incf (last-id (class-of object))))))))
 
-(defun write-storable-object-common (type-code object stream
-                                     &key before)
+(declaim (inline write-storable-object-common))
+(defun write-storable-object-common (object stream &key before)
   (let* ((class (class-of object))
          (slots (slot-locations-and-initforms class))
          (class-id (write-object class stream))
          (id (assign-id object)))
-    (declare (simple-vector slots)
-             (fixnum type-code))
+    (declare (simple-vector slots))
     (setf (collection object) *collection*)
-    (write-n-bytes type-code 1 stream)
-    (when before
-      (funcall before stream))
+    (write-n-bytes #.(type-code 'storable-object) 1 stream)
     (write-n-bytes class-id +class-id-length+ stream)
     (write-n-bytes id +id-length+ stream)
+    (when before
+      (funcall before stream))
     (when *export*
-      (write-object (if (or (eq (collection object)
-                                *collection*)
+      (write-object (if (or (eq (collection object) *collection*)
                             (not (top-level object)))
                         nil
                         (name (collection object)))
@@ -811,8 +808,7 @@
     (write-n-bytes +end+ 1 stream)))
 
 (defun write-storable-object (object stream)
-  (write-storable-object-common #.(type-code 'storable-object)
-                                object stream))
+  (write-storable-object-common object stream))
 
 (defun write-storable-versioned-object (object stream)
   (let ((previous (car (old-versions object))))
@@ -820,8 +816,7 @@
                (not (effective-date previous)))
       (setf (effective-date previous)
             (stamp-date object)))
-    (write-storable-object-common #.(type-code 'storable-versioned-object)
-                                  object stream
+    (write-storable-object-common object stream
                                   :before
                                   (when *export*
                                     (lambda (stream)
@@ -867,11 +862,18 @@
 (defreader storable-object (stream)
   (multiple-value-bind (object id existing class-id) (read-instance stream)
     ;; To work with the old db files, this supports versioning as well
-    (let* ((proxy (get-class class-id))
+    (let* ((versioned-p (typep object 'storable-versioned-object) )
+           (old-versions
+             (when (and *import* versioned-p)
+               (let ((*do-not-push-into-collection* t))
+                 (read-next-object stream))))
+           (proxy (get-class class-id))
            (slots (proxy-slot-locations proxy))
-           (copy (when existing
-                   (prog1 (copy-object object)
-                     (clear-previous-version object))))
+           (copy (cond ((not existing)
+                        nil)
+                       (versioned-p
+                        (prog1 (copy-object object)
+                          (clear-previous-version object)))))
            (collection-name (and *import*
                                  (read-next-object stream)))
            (*collection* (if collection-name
@@ -880,10 +882,11 @@
       (assign-read-id object id)
       (read-slots object slots stream)
       (when *import*
-        (setf (written object) nil))
+        (setf (written object) nil)
+        (when versioned-p
+          (setf (old-versions object) old-versions)))
       (setf (collection object) *collection*)
-      (cond ((and copy
-                  (typep object 'storable-versioned-object))
+      (cond ((and copy versioned-p)
              (supersede object copy :set-time t)
              (unless (eq (collection object)
                          (collection copy))
@@ -902,16 +905,6 @@
              (when *import*
                (serialize-doc *collection*
                               object)))))
-    object))
-
-(defreader storable-versioned-object (stream)
-  (let ((old-versions
-          (when *import*
-            (let ((*do-not-push-into-collection* t))
-              (read-next-object stream))))
-        (object (storable-object-reader stream)))
-    (when *import*
-      (setf (old-versions object) old-versions))
     object))
 
 ;;; standard-class
