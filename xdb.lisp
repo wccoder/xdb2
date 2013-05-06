@@ -182,9 +182,6 @@ sort-collection, sort-collection-temporary and union-collection. "))
     (ensure-directories-exist (path collection))
     (load-from-file collection
                     (make-pathname :defaults (path collection)
-                                   :type "snap"))
-    (load-from-file collection
-                    (make-pathname :defaults (path collection)
                                    :type "log"))
     collection))
 
@@ -206,20 +203,14 @@ sort-collection, sort-collection-temporary and union-collection. "))
 (defmethod snapshot ((collection collection))
   (let* ((backup (merge-pathnames "backup/" (path collection)))
          (log (make-pathname :type "log" :defaults (path collection)))
-         (snap (make-pathname :type "snap" :defaults (path collection)))
          (backup-name (append-date (name collection)))
          (log-backup (make-pathname :name backup-name
                                     :type "log"
-                                    :defaults backup))
-         (snap-backup (make-pathname :name backup-name
-                                     :type "snap"
-                                     :defaults backup)))
+                                    :defaults backup)))
     (ensure-directories-exist backup)
-    (when (probe-file snap)
-      (rename-file snap snap-backup))
     (when (probe-file log)
       (rename-file log log-backup))
-    (save-data collection snap)))
+    (save-data collection log)))
 
 (defmethod snapshot ((db xdb))
   (maphash (lambda (key value)

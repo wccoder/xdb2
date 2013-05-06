@@ -95,6 +95,7 @@
 (defvar *db*)
 (defvar *import* nil)
 (defvar *export* nil)
+(defvar *snapshot* nil)
 (defvar *export-last-id*)
 
 (defvar *written-objects*)
@@ -166,12 +167,16 @@
        ,@body)))
 
 (defun is-written (object)
-  (if *export*
-      (gethash object *written-objects*)
-      (written object)))
+  (cond (*export*
+         (gethash object *written-objects*))
+        (*snapshot*
+         (or (gethash object *written-objects*)
+             (not (eq (collection object) *collection*))))
+        (t
+         (written object))))
 
 (defun set-written (object)
-  (if *export*
+  (if (or *export* *snapshot*)
       (setf (gethash object *written-objects*) t)
       (setf (written object) t)))
 
@@ -192,11 +197,11 @@
 (defun write-top-level-object (object stream)
   (typecase object
     (storable-versioned-object
-     (unless *export*
+     (unless (or *export* *snapshot*)
        (write-objects-inside-slots object stream))
      (write-storable-versioned-object object stream))
     (storable-object
-     (unless *export*
+     (unless (or *export* *snapshot*)
        (write-objects-inside-slots object stream))
      (write-storable-object object stream))
     (t
@@ -776,6 +781,11 @@
          (setf (id object)
                (1- (incf (last-id (class-of object))))))))
 
+(defun write-old-versions (object stream)
+  (let ((old-versions (reverse (old-versions object))))
+    (loop for old in old-versions
+          do (write-storable-object old stream))))
+
 (declaim (inline write-storable-object-common))
 (defun write-storable-object-common (object stream &key before)
   (let* ((class (class-of object))
@@ -816,6 +826,8 @@
                (not (effective-date previous)))
       (setf (effective-date previous)
             (stamp-date object)))
+    (when *snapshot*
+      (write-old-versions object stream))
     (write-storable-object-common object stream
                                   :before
                                   (when *export*
@@ -1085,13 +1097,13 @@
 
 (defun save-data (collection file)
   (with-collection-lock collection
-    (let ((*written-objects* (make-hash-table :test 'eq)))
+    (let ((*written-objects* (make-hash-table :test 'eq))
+          (*snapshot* t))
       (clear-cache collection)
       (with-collection collection
         (with-io-file (stream file
                        :direction :output)
           (dump-data stream)))
-      (clear-cache collection)
       (values))))
 
 (defun save-doc (collection document file)
