@@ -365,7 +365,8 @@ of sorted docs."))
   ((key :initarg :key
          :accessor key)
    (value :initarg :value
-          :accessor value)))
+          :accessor value))
+  (:metaclass storable-class))
 
 (defgeneric enable-sequences (xdb))
 
