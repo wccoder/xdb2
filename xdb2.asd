@@ -13,6 +13,7 @@
                (:file "disk")
                (:file "common")
                (:file "xdb")
+               (:file "sequences")
                (:file "db-functions")
                (:file "document")))
 

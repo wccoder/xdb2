@@ -361,44 +361,7 @@ of sorted docs."))
 
 ;;Add method for validation when updating a collection.
 
-(defclass xdb-sequence ()
-  ((key :initarg :key
-         :accessor key)
-   (value :initarg :value
-          :accessor value))
-  (:metaclass storable-class))
 
-(defgeneric enable-sequences (xdb))
-
-(defmethod enable-sequences ((xdb xdb))
-  (add-collection xdb "sequences" 
-                  :collection-class 'collection))
-
-(defgeneric next-sequence (xdb key))
-
-(defun get-sequence-max (collection value)
-  (let ((max 0)
-        (return-doc))
-    (map-docs
-     nil
-     (lambda (doc)
-       (when (equal (get-val doc 'key) value)
-         (when (> (get-val doc 'value) max)
-             (setf max (get-val doc 'value))
-             (setf return-doc doc))))
-     collection)
-    return-doc))
-
-
-(defmethod next-sequence ((xdb xdb) key)
-  (let ((doc (get-sequence-max (get-collection xdb "sequences") key)))
-    (unless doc
-      (setf doc (make-instance 'xdb-sequence :key key :value 0))
-      (vector-push-extend doc (docs (get-collection xdb "sequences"))))
-    (incf (get-val doc 'value))
-    (serialize-doc (get-collection xdb "sequences")
-                doc)
-    (get-val doc 'value)))
 
 ;;;
 
