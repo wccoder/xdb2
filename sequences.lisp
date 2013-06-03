@@ -13,7 +13,7 @@
   (add-collection xdb "sequences" 
                   :collection-class (or collection-class 'collection)))
 
-(defgeneric next-sequence (xdb key))
+(defgeneric next-sequence (xdb key sequence-class))
 
 (defun get-sequence-max (collection value)
   (let ((max 0)
@@ -28,9 +28,8 @@
      collection)
     return-doc))
 
-(defmethod next-sequence ((xdb xdb) key)
+(defmethod next-sequence ((xdb xdb) key sequence-class)
   (let* ((sequences (get-collection xdb "sequences"))
-         (sequence-class (class-name (class-of sequences)))
          (doc (get-sequence-max sequences  key)))
     (unless doc
       (setf doc (make-instance sequence-class  :key key :value 0)))
